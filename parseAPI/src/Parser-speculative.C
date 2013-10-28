@@ -51,6 +51,8 @@ using namespace Dyninst::ParseAPI;
 
 #if defined(cap_stripped_binaries)
 
+#include "ProbabilisticParser.h"
+
 namespace hd {
     Address calc_end(Function * f) {
         Address ret = f->addr() + 1;
@@ -169,7 +171,6 @@ namespace hd {
         }
     }
 
-
     bool gap_heuristics(CodeObject *co,CodeRegion *cr,Address addr)
     {
         bool ret = false;
@@ -260,9 +261,66 @@ void Parser::parse_gap_heuristic(CodeRegion * cr)
     finalize();
 }
 
+void Parser::probabilistic_gap_parsing(CodeRegion *cr) {
+    // 0. ensure that we've parsed and finalized all vanilla parsing.
+    // We also locate all the gaps
+    if(_parse_state < COMPLETE)
+        parse();
+    finalize();
+
+    vector<pair<Address, Address> > gaps;
+    Address gapStart = 0;
+    Address gapEnd = 0;
+    Address curAddr = 0;
+    set<Function *,Function::less>::const_iterator fit = sorted_funcs.begin();
+    while(hd::compute_gap(cr,curAddr,sorted_funcs,fit,gapStart,gapEnd)) {
+        parsing_printf("[%s] scanning for prologues in [%lx,%lx)\n",
+            FILE__,gapStart,gapEnd);
+	gaps.push_back(make_pair(gapStart, gapEnd));
+	curAddr = gapEnd;
+    }
+
+    // 1. Load the pre-trained idiom model:
+    // In the real world, we may have to decide which model to load
+    // depending on the provenance of the binary. 
+    // But currently we only have the gcc model...
+    hd::ProbabilityCalculator pc(cr, obj().cs(), "gcc");
+
+    // 2. Apply idiom match to every byte in gap and
+    // derive the first version of the probabilities of 
+    // whether a byte is a FEP or not.
+    for (size_t i = 0; i < gaps.size(); ++i) {
+        gapStart = gaps[i].first;
+	gapEnd = gaps[i].second;
+	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) {
+	    pc.calcProbByMatchingIdioms(curAddr);
+	}
+    }
+
+    // 3. (Optional) Use the consistency contraints and caller-callee constraints 
+    // to calculate the final version of the probabilities.
+    pc.calcProbByEnforcingConstraints();
+
+    // 4. Accoring to the probabilities, we can determine the FEP 
+    // and conduct the real gap parsing
+    for (size_t i = 0; i < gaps.size(); ++i) {
+        gapStart = gaps[i].first;
+	gapEnd = gaps[i].second;
+	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) 
+	    if (pc.getProb(curAddr) > 0.5 && cr->isCode(curAddr)) {
+	        parsing_printf("[%s] find gap FEP at %lx\n", FILE__, curAddr);
+                parse_at(cr,curAddr,true,GAP);
+	    }
+    }
+
+    finalize();
+}
+
 #else // cap_stripped binaries
 void Parser::parse_gap_heuristic(CodeRegion*)
 {
 
+}
+void Parser::probabilistic_gap_parsing(CodeRegion *cr) {
 }
 #endif

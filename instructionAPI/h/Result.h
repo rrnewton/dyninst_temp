@@ -518,7 +518,10 @@ namespace Dyninst
    case dbl128:
       return 16;
 	default:
-	  assert(!"Unknown type in Result");
+	  //assert(!"Unknown type in Result");
+	  // used in probabilistic gap parsing to produce training data,
+	  // where we could start to decode at any byte and use this as a sign
+	  // for junk bytes
 	  return 0;
 	};
       }

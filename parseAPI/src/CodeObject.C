@@ -167,12 +167,18 @@ CodeObject::parse(CodeRegion *cr, Address target, bool recursive) {
 }
 
 void
-CodeObject::parseGaps(CodeRegion *cr) {
+CodeObject::parseGaps(CodeRegion *cr, int type /* = 0 */) {
     if(!parser) {
         fprintf(stderr,"FATAL: internal parser undefined\n");
         return;
     }
-    parser->parse_gap_heuristic(cr);
+    if (type == 0) {
+        parser->parse_gap_heuristic(cr);
+    }
+    else {
+        //Try the probabilistic gap parsing
+        parser->probabilistic_gap_parsing(cr);
+    }
 }
 
 void

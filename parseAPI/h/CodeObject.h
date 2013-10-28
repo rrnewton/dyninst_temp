@@ -89,7 +89,7 @@ class CodeObject {
     PARSER_EXPORT bool parseNewEdges( vector<NewEdgeToParse> & worklist ); 
 
     // `speculative' parsing
-    PARSER_EXPORT void parseGaps(CodeRegion *cr);
+    PARSER_EXPORT void parseGaps(CodeRegion *cr, int type=0);
 
     /** Lookup routines **/
 

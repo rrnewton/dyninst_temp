@@ -166,6 +166,7 @@ unsigned int MachRegister::size() const {
             case x86_64::BIT:
                return 0;
             default:
+	       return 0; // A sign that we are decoding junk
                assert(0);
          }
       case Arch_ppc32: {
