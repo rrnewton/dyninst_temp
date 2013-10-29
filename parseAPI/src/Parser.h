@@ -148,7 +148,7 @@ class Parser {
  private:
     void parse_vanilla();
     void parse_gap_heuristic(CodeRegion *cr);
-    void probabilistic_gap_parsing(CodeRegion* cr);
+    void probabilistic_gap_parsing(CodeRegion* cr, std::string model_spec);
     //void parse_sbp();
 
     ParseFrame::Status frame_status(CodeRegion * cr, Address addr);

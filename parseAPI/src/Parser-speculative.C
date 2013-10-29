@@ -261,7 +261,7 @@ void Parser::parse_gap_heuristic(CodeRegion * cr)
     finalize();
 }
 
-void Parser::probabilistic_gap_parsing(CodeRegion *cr) {
+void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
     // 0. ensure that we've parsed and finalized all vanilla parsing.
     // We also locate all the gaps
     if(_parse_state < COMPLETE)
@@ -284,7 +284,7 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr) {
     // In the real world, we may have to decide which model to load
     // depending on the provenance of the binary. 
     // But currently we only have the gcc model...
-    hd::ProbabilityCalculator pc(cr, obj().cs(), "gcc");
+    hd::ProbabilityCalculator pc(cr, obj().cs(), model_spec);
 
     // 2. Apply idiom match to every byte in gap and
     // derive the first version of the probabilities of 
@@ -307,7 +307,7 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr) {
         gapStart = gaps[i].first;
 	gapEnd = gaps[i].second;
 	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) 
-	    if (pc.getProb(curAddr) > 0.5 && cr->isCode(curAddr)) {
+	    if (pc.isFEP(curAddr) > 0.5 && cr->isCode(curAddr)) {
 	        parsing_printf("[%s] find gap FEP at %lx\n", FILE__, curAddr);
                 parse_at(cr,curAddr,true,GAP);
 	    }

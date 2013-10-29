@@ -48,6 +48,10 @@ using namespace Dyninst::InstructionAPI;
 using namespace NS_x86;
 using namespace hd; 
 bool IdiomTerm::operator == (const IdiomTerm &it) const {
+    if (entry_id == 0x130 && it.entry_id == 0x130) return true; // Nops match without considering arguments
+    if (entry_id == 0x1b5 && arg1 == 0xffff && arg2 == 0xffff) // This is a push callee saved register term
+        if (it.entry_id == 0x1b5 && ((it.arg1 <= 0xf && it.arg1 >= 0xc) || it.arg1 == 0x5 || it.arg1 == 0x3)) // Push callee saved registers
+	    return true;
     return (entry_id == it.entry_id) && (arg1 == it.arg1) && (arg2 == it.arg2);
 }
 
@@ -209,7 +213,10 @@ void IdiomSet::deleteUnmatch(size_t pos, unsigned short arg1, unsigned short arg
         bool match = false;
         if (idioms[i].terms.size() > pos) {
 	    const Idiom& cur_idiom = idioms[i];
-	    if (cur_idiom.terms[pos].entry_id == 0xaaaa || (cur_idiom.terms[pos].arg1 == arg1 && cur_idiom.terms[pos].arg2 == arg2)) match = true;
+	    if (cur_idiom.terms[pos].entry_id == 0xaaaa || // Wildcard ignores arugments
+	        cur_idiom.terms[pos].entry_id == 0x130 || // Nop ignores arguments
+		(cur_idiom.terms[pos].entry_id == 0x1b5 && cur_idiom.terms[pos].arg1 == 0xffff && cur_idiom.terms[pos].arg2 == 0xffff && ((arg1 <= 0xf && arg1 >= 0xc) || arg1 == 0x5 || arg1 == 0x3)) || // Push callee saved registers
+		(cur_idiom.terms[pos].arg1 == arg1 && cur_idiom.terms[pos].arg2 == arg2)) match = true;
 	}
 	if (!match) {
 	    idioms.erase(idioms.begin() + i);
@@ -269,15 +276,21 @@ double IdiomSet::matchBackwardAndDelete(size_t pos,
 }
 IdiomModel::IdiomModel(string model_spec) {
 
-    if (model_spec != "gcc") {
-        assert("We currently only support the 'gcc' model\n" && 0);
+    if (model_spec != "gcc" && model_spec != "icc") {
+        assert("We currently only support the 'gcc' model and 'icc' model\n" && 0);
     }
     
     int totalFeatures;
     char buf[1024];
     double weights;
 
-    FILE *f = fopen("gcc_model", "r");
+    FILE *f;
+    if (model_spec == "gcc") f = fopen("gcc_model", "r");
+    if (model_spec == "icc") f = fopen("icc_model", "r");
+    if (f == NULL) {
+        fprintf(stderr, "Cannot %s model file!\n", model_spec.c_str());
+	assert(0);
+    }
     fscanf(f, "%d", &totalFeatures);
     for (int i = 0; i < totalFeatures; ++i) {
         fscanf(f, "%s %lf", buf, &weights);
@@ -287,6 +300,8 @@ IdiomModel::IdiomModel(string model_spec) {
 	    normal.addIdiom(Idiom(buf, weights, false));
     }
     fscanf(f, "%lf", &bias);
+    // Probability threshold is default to be 0.5
+    if (fscanf(f, "%lf", &prob_threshold) == EOF) prob_threshold = 0.5;
     fclose(f);
 }
 
@@ -329,6 +344,11 @@ double ProbabilityCalculator::getProb(Address addr) {
     if (final_prob.find(addr) != final_prob.end()) return final_prob[addr];
     if (first_prob.find(addr) != first_prob.end()) return first_prob[addr];
     return -1;
+}
+
+bool ProbabilityCalculator::isFEP(Address addr) {
+    double prob = getProb(addr);
+    if (prob >= model.getProbThreshold()) return true; else return false;
 }
 
 double ProbabilityCalculator::calcForwardWeights(int cur, Address addr, IdiomSet &is) {

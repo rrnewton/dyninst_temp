@@ -177,7 +177,8 @@ CodeObject::parseGaps(CodeRegion *cr, int type /* = 0 */) {
     }
     else {
         //Try the probabilistic gap parsing
-        parser->probabilistic_gap_parsing(cr);
+        if (type == 1) parser->probabilistic_gap_parsing(cr, "gcc");
+	if (type == 2) parser->probabilistic_gap_parsing(cr, "icc");
     }
 }
 

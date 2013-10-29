@@ -109,6 +109,7 @@ class IdiomModel {
     IdiomSet prefix;
 
     double bias;
+    double prob_threshold;
 
 public:
     IdiomModel() {}
@@ -116,6 +117,7 @@ public:
     IdiomSet copyNormalIdioms();
     IdiomSet copyPrefixIdioms();
     double getBias() {return bias; }
+    double getProbThreshold() { return prob_threshold; }
 };
 
 class ProbabilityCalculator {
@@ -140,6 +142,7 @@ public:
     double calcProbByMatchingIdioms(Address addr);
     void calcProbByEnforcingConstraints();
     double getProb(Address addr);
+    bool isFEP(Address addr);
 };
 
 };
