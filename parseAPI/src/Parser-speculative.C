@@ -284,7 +284,7 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
     // In the real world, we may have to decide which model to load
     // depending on the provenance of the binary. 
     // But currently we only have the gcc model...
-    hd::ProbabilityCalculator pc(cr, obj().cs(), model_spec);
+    hd::ProbabilityCalculator pc(cr, obj().cs(), this, model_spec);
 
     // 2. Apply idiom match to every byte in gap and
     // derive the first version of the probabilities of 
@@ -297,22 +297,22 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
 	}
     }
 
-    // 3. (Optional) Use the consistency contraints and caller-callee constraints 
+    // 3. Use the consistency contraints and caller-callee constraints 
     // to calculate the final version of the probabilities.
-    pc.calcProbByEnforcingConstraints();
+//    pc.calcProbByEnforcingConstraints();
 
     // 4. Accoring to the probabilities, we can determine the FEP 
     // and conduct the real gap parsing
+
     for (size_t i = 0; i < gaps.size(); ++i) {
         gapStart = gaps[i].first;
 	gapEnd = gaps[i].second;
 	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) 
-	    if (pc.isFEP(curAddr) > 0.5 && cr->isCode(curAddr)) {
+	    if (pc.isFEP(curAddr) && cr->isCode(curAddr)) {
 	        parsing_printf("[%s] find gap FEP at %lx\n", FILE__, curAddr);
-                parse_at(cr,curAddr,true,GAP);
+                parse_at(cr,curAddr,false,GAP);
 	    }
-    }
-
+    } 
     finalize();
 }
 

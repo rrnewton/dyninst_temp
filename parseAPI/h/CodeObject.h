@@ -55,6 +55,10 @@ class ParseCallbackManager;
 class CFGModifier;
 class CodeSource;
 
+typedef enum {
+    DynHeu, ProbGCC, ProbICC
+} GapParsingType;
+
 class CodeObject {
    friend class CFGModifier;
  public:
@@ -89,7 +93,7 @@ class CodeObject {
     PARSER_EXPORT bool parseNewEdges( vector<NewEdgeToParse> & worklist ); 
 
     // `speculative' parsing
-    PARSER_EXPORT void parseGaps(CodeRegion *cr, int type=0);
+    PARSER_EXPORT void parseGaps(CodeRegion *cr, GapParsingType type=DynHeu);
 
     /** Lookup routines **/
 

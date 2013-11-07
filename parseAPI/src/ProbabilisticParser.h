@@ -40,15 +40,20 @@
 #include <string>
 #include <vector>
 #include <set>
+#include <map>
 
 #include "common/h/dyntypes.h"
 #include "CodeSource.h"
 #include "entryIDs.h"
 #include "RegisterIDs.h"
+#include "Parser.h"
+#include "CFG.h"
 
 using Dyninst::Address;
 using Dyninst::ParseAPI::CodeRegion;
 using Dyninst::ParseAPI::CodeSource;
+using Dyninst::ParseAPI::Parser;
+using Dyninst::ParseAPI::Function;
 
 namespace hd {
 
@@ -56,6 +61,10 @@ namespace hd {
 #define IMMARG (NOARG-1)
 #define MEMARG (NOARG-2)
 #define MULTIREG (NOARG-3)
+#define CALLEESAVEREG (NOARG-4)
+#define ARGUREG (NOARG-5)
+#define OTHERREG (NOARG-6)
+
 
 #define ENTRY_SHIFT 32ULL
 #define ARG1_SHIFT 16ULL
@@ -66,7 +75,6 @@ namespace hd {
 #define ENTRY_MASK (((uint64_t)(1<<ENTRY_SIZE)-1) << ENTRY_SHIFT)
 #define ARG1_MASK (((uint64_t)(1<<ARG_SIZE)-1) << ARG1_SHIFT)
 #define ARG2_MASK (((uint64_t)(1<<ARG_SIZE)-1) << ARG2_SHIFT)
-
 
 struct IdiomTerm {
     unsigned short entry_id, arg1, arg2;
@@ -124,6 +132,7 @@ class ProbabilityCalculator {
     IdiomModel model;
     CodeRegion* cr;
     CodeSource* cs;
+    Parser* parser;
     // The probability calculated by applying idiom model
     dyn_hash_map<Address, double> first_prob;
     // The probability calculated by enforcing overlapping and caller-callee constraints
@@ -133,12 +142,16 @@ class ProbabilityCalculator {
     dyn_hash_map<Address, std::pair<unsigned short, unsigned short> > opcodeCache, operandCache;
 
     // Recursively mathcing normal idioms and calculate weights
-    double calcForwardWeights(int cur, Address addr, IdiomSet &is);
+    double calcForwardWeights(int cur, Address addr, IdiomSet &is, bool &valid);
     // Recursively mathcing prefix idioms and calculate weights
     double calcBackwardWeights(int cur, Address addr, IdiomSet &is, std::set<Idiom> &matched);
+    // Enforce the overlapping constraints and
+    // return true if the cur_addr doesn't conflict with other identified functions,
+    // otherwise return false
+    bool enforceOverlappingConstraints(Function *f, Address cur_addr, double cur_prob);
 
 public:
-    ProbabilityCalculator(CodeRegion *reg, CodeSource *source, std::string model_spec);
+    ProbabilityCalculator(CodeRegion *reg, CodeSource *source, Parser *parser, std::string model_spec);
     double calcProbByMatchingIdioms(Address addr);
     void calcProbByEnforcingConstraints();
     double getProb(Address addr);

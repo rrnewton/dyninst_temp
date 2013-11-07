@@ -24,8 +24,9 @@ set (SRC_LIST
         src/IA_platformDetailsFactory.C 
         src/CFGModifier.C
         src/StackTamperVisitor.C
+	src/IdiomModelDesc.C
 	src/ProbabilisticParser.C
-        ../dataflowAPI/src/ABI.C 
+	../dataflowAPI/src/ABI.C 
         ../dataflowAPI/src/Absloc.C 
         ../dataflowAPI/src/AbslocInterface.C 
         ../dataflowAPI/src/convertOpcodes.C 

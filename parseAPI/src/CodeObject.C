@@ -167,18 +167,18 @@ CodeObject::parse(CodeRegion *cr, Address target, bool recursive) {
 }
 
 void
-CodeObject::parseGaps(CodeRegion *cr, int type /* = 0 */) {
+CodeObject::parseGaps(CodeRegion *cr, GapParsingType type /* DynHeu 0 */) {
     if(!parser) {
         fprintf(stderr,"FATAL: internal parser undefined\n");
         return;
     }
-    if (type == 0) {
+    if (type == DynHeu) {
         parser->parse_gap_heuristic(cr);
     }
     else {
         //Try the probabilistic gap parsing
-        if (type == 1) parser->probabilistic_gap_parsing(cr, "gcc");
-	if (type == 2) parser->probabilistic_gap_parsing(cr, "icc");
+        if (type == ProbGCC) parser->probabilistic_gap_parsing(cr, "gcc");
+	if (type == ProbICC) parser->probabilistic_gap_parsing(cr, "icc");
     }
 }
 
