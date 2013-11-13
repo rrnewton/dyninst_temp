@@ -65,6 +65,7 @@ namespace hd {
 #define ARGUREG (NOARG-5)
 #define OTHERREG (NOARG-6)
 
+#define JUNK_OPCODE 0xffff
 
 #define ENTRY_SHIFT 32ULL
 #define ARG1_SHIFT 16ULL
@@ -83,6 +84,8 @@ struct IdiomTerm {
         entry_id(a), arg1(b), arg2(c) {}
     bool operator == (const IdiomTerm & it) const;
     bool operator < (const IdiomTerm & it) const;
+    bool matchOpcode(unsigned short entry_id) const;
+    bool match(const IdiomTerm &it) const;
     std::string human_format() const;
 };
 
@@ -95,26 +98,31 @@ struct Idiom {
     std::string human_format() const;
 };
 
-class IdiomSet {
-    std::vector<Idiom> idioms;
+class IdiomPrefixTree {
+public:
+    typedef std::vector<std::pair<IdiomTerm, IdiomPrefixTree*> > ChildrenType;
+
+private:
+    ChildrenType children;
+    double w;
+    bool feature;
+    void addIdiom(int cur, const Idiom& idiom);
+
 
 public:
+    IdiomPrefixTree();
     void addIdiom(const Idiom& idiom);
-    void deleteUnmatch(size_t pos, unsigned short entry_id);
-    void deleteUnmatch(size_t pos, unsigned short arg1, unsigned short arg2);
-    double matchForwardAndDelete(size_t pos, unsigned short entry_id, unsigned short arg1, unsigned short arg2);
-    // A prefix idiom may happen multiple times at a give byte. We only want to count its weight once
-    double matchBackwardAndDelete(size_t pos, 
-                                  unsigned short entry_id, 
-				  unsigned short arg1, 
-				  unsigned short arg2, 
-				  std::set<Idiom> &matched); 
-    int size() {return idioms.size(); }
+    ChildrenType findChildrenWithOpcode(unsigned short entry_id);
+    ChildrenType findChildrenWithArgs(unsigned short arg1, unsigned short arg2, ChildrenType &candidate);
+    bool isFeature() {return feature; }
+    bool isLeafNode() { return (int)children.size() == 0; }
+    double getWeight() {return w;}
+
 };
 
 class IdiomModel {
-    IdiomSet normal;
-    IdiomSet prefix;
+    IdiomPrefixTree normal;
+    IdiomPrefixTree prefix;
 
     double bias;
     double prob_threshold;
@@ -122,10 +130,10 @@ class IdiomModel {
 public:
     IdiomModel() {}
     IdiomModel(std::string model_spec);
-    IdiomSet copyNormalIdioms();
-    IdiomSet copyPrefixIdioms();
     double getBias() {return bias; }
     double getProbThreshold() { return prob_threshold; }
+    IdiomPrefixTree * getNormalIdiomTreeRoot() { return &normal; }
+    IdiomPrefixTree * getPrefixIdiomTreeRoot() { return &prefix; }
 };
 
 class ProbabilityCalculator {
@@ -142,13 +150,16 @@ class ProbabilityCalculator {
     dyn_hash_map<Address, std::pair<unsigned short, unsigned short> > opcodeCache, operandCache;
 
     // Recursively mathcing normal idioms and calculate weights
-    double calcForwardWeights(int cur, Address addr, IdiomSet &is, bool &valid);
+    double calcForwardWeights(int cur, Address addr, IdiomPrefixTree *tree, bool &valid);
     // Recursively mathcing prefix idioms and calculate weights
-    double calcBackwardWeights(int cur, Address addr, IdiomSet &is, std::set<Idiom> &matched);
+    double calcBackwardWeights(int cur, Address addr, IdiomPrefixTree *tree, std::set<IdiomPrefixTree*> &matched);
     // Enforce the overlapping constraints and
     // return true if the cur_addr doesn't conflict with other identified functions,
     // otherwise return false
     bool enforceOverlappingConstraints(Function *f, Address cur_addr, double cur_prob);
+
+    bool getOpcode(unsigned short &entry_id, unsigned short &len, Address addr);
+    bool getArgs(unsigned short &arg1, unsigned short &arg2, Address addr);
 
 public:
     ProbabilityCalculator(CodeRegion *reg, CodeSource *source, Parser *parser, std::string model_spec);

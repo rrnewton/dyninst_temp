@@ -307,11 +307,13 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
     for (size_t i = 0; i < gaps.size(); ++i) {
         gapStart = gaps[i].first;
 	gapEnd = gaps[i].second;
-	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) 
+	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) {
+//	    printf("%lx %.10lf\n", curAddr, pc.getProb(curAddr));
 	    if (pc.isFEP(curAddr) && cr->isCode(curAddr)) {
 	        parsing_printf("[%s] find gap FEP at %lx\n", FILE__, curAddr);
                 parse_at(cr,curAddr,false,GAP);
 	    }
+	}
     } 
     finalize();
 }

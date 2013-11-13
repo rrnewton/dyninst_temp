@@ -98,11 +98,20 @@ static bool MatchArgs(unsigned short arg1, unsigned short arg2) {
     return arg1 == arg2;
 }
 
-bool IdiomTerm::operator == (const IdiomTerm &it) const {    
+bool IdiomTerm::match(const IdiomTerm &it) const {    
     if (entry_id == WILDCARD_ENTRY_ID || it.entry_id == WILDCARD_ENTRY_ID) return true; // Wildcard matches everything
     if (entry_id == NOP_ENTRY_ID && it.entry_id == NOP_ENTRY_ID) return true; // Nops match without considering arguments
     if (entry_id != it.entry_id) return false;
     return MatchArgs(arg1, it.arg1) && MatchArgs(arg2, it.arg2);
+}
+
+bool IdiomTerm::matchOpcode(unsigned short eid) const {
+    if (entry_id == WILDCARD_ENTRY_ID || eid == WILDCARD_ENTRY_ID) return true; // Wildcard matches everything
+    return entry_id == eid;
+}
+
+bool IdiomTerm::operator == (const IdiomTerm &it) const {
+    return (entry_id == it.entry_id) && (arg1 == it.arg1) && (arg2 == it.arg2);
 }
 
 bool IdiomTerm::operator < (const IdiomTerm &it) const {
@@ -248,100 +257,53 @@ string Idiom::human_format() const {
 
 }
 
-void IdiomSet::addIdiom(const Idiom& idiom) {
-    idioms.push_back(idiom);
-    // only work if the idiom contains single wildcard!
-    for (size_t i = 0 ; i < idiom.terms.size(); ++i)
-        if (idiom.terms[i].entry_id == WILDCARD_ENTRY_ID) {
-	    Idiom new_idiom = idiom;
-	    new_idiom.terms.insert(new_idiom.terms.begin() + i, WILDCARD_TERM);
-	    idioms.push_back(new_idiom);
-	    break;
-	}
+IdiomPrefixTree::IdiomPrefixTree() {
+    feature = false;
 }
 
-void IdiomSet::deleteUnmatch(size_t pos, unsigned short entry_id) {
-    for (size_t i = 0; i < idioms.size(); ) {
-        bool match = false;
-        if (idioms[i].terms.size() > pos) {
-	    const Idiom& cur_idiom = idioms[i];
-	    if (cur_idiom.terms[pos].entry_id == entry_id || cur_idiom.terms[pos].entry_id == WILDCARD_ENTRY_ID) match = true;
-	}
-	if (!match) {
-	    idioms.erase(idioms.begin() + i);
-	} else {
-	    ++i;
-	}
-    }
+void IdiomPrefixTree::addIdiom(const Idiom& idiom) {
+    addIdiom(0, idiom);
 }
 
-void IdiomSet::deleteUnmatch(size_t pos, unsigned short arg1, unsigned short arg2) {
-    for (size_t i = 0; i < idioms.size(); ) {
-        bool match = false;
-        if (idioms[i].terms.size() > pos) {
-	    const Idiom& cur_idiom = idioms[i];
-	    if (cur_idiom.terms[pos].entry_id == WILDCARD_ENTRY_ID || // Wildcard ignores arugments
-	        cur_idiom.terms[pos].entry_id == NOP_ENTRY_ID || // Nop ignores arguments
-		(MatchArgs(cur_idiom.terms[pos].arg1, arg1) && MatchArgs(cur_idiom.terms[pos].arg2, arg2))) // Otherwise, match two operands
-		    match = true;
-	}
-	if (!match) {
-	    idioms.erase(idioms.begin() + i);
-	} else {
-	    ++i;
-	}
-    }
-}
-
-double IdiomSet::matchForwardAndDelete(size_t pos, unsigned short entry_id, unsigned short arg1, unsigned short arg2) {
-    double w = 0;
-    const IdiomTerm it(entry_id, arg1, arg2);
-    for (size_t i = 0; i < idioms.size(); ) {
-        bool match = false;
-        if (idioms[i].terms.size() == pos + 1) {
-	    const Idiom& cur_idiom = idioms[i];
-	    if (cur_idiom.terms[pos] == it) {
-	        match = true;
-		w += cur_idiom.w;
-//		fprintf(stderr, "forward match %s\n", cur_idiom.human_format().c_str());
-            }
-	}
-	if (match) {
-	    idioms.erase(idioms.begin() + i);
-	} else {
-	    ++i;
-	}
-    }
-    return w;
-}
-
-double IdiomSet::matchBackwardAndDelete(size_t pos, 
-                                        unsigned short entry_id, 
-					unsigned short arg1, 
-					unsigned short arg2, 
-					set<Idiom>& matched) {
-    double w = 0;
-    const IdiomTerm it(entry_id, arg1, arg2);
-    for (size_t i = 0; i < idioms.size(); ) {
-        bool match = false;
-        if (idioms[i].terms.size() == pos + 1) {
-	    const Idiom& cur_idiom = idioms[i];
-	    if (cur_idiom.terms[pos] == it) {
-	        match = true;
-		if (matched.find(cur_idiom) == matched.end()) {
-		    w += cur_idiom.w;
-		    matched.insert(cur_idiom);
-		}
+void IdiomPrefixTree::addIdiom(int cur, const Idiom& idiom) {
+    if (cur == (int)idiom.terms.size()) {
+        feature = true;
+	w = idiom.w;
+    } else {
+        auto next = children.end();
+	for (auto cit = children.begin(); cit != children.end(); ++cit) {
+	    if (cit->first == idiom.terms[cur]) {
+	        next = cit;
+		break;
 	    }
 	}
-	if (match) {
-	    idioms.erase(idioms.begin() + i);
-	} else {
-	    ++i;
+
+	if (next == children.end()) {
+	    children.push_back(make_pair(idiom.terms[cur], new IdiomPrefixTree() ) );
+	    next = children.end();
+	    --next;
 	}
+	next->second->addIdiom(cur+1, idiom);
     }
-    return w;
 }
+
+IdiomPrefixTree::ChildrenType IdiomPrefixTree::findChildrenWithOpcode(unsigned short entry_id) {
+    ChildrenType ret;
+    for (auto cit = children.begin(); cit != children.end(); ++cit)
+        if (cit->first.matchOpcode(entry_id))
+	    ret.push_back(*cit);
+    return ret;
+}
+
+IdiomPrefixTree::ChildrenType IdiomPrefixTree::findChildrenWithArgs(unsigned short arg1, unsigned short arg2, ChildrenType &candidate) {
+    ChildrenType ret;
+    for (auto cit = candidate.begin(); cit != candidate.end(); ++cit) {
+        if (cit->first.match(IdiomTerm(cit->first.entry_id, arg1, arg2)))
+	    ret.push_back(*cit);
+    }
+    return ret;
+}
+
 IdiomModel::IdiomModel(string model_spec) {
     IdiomModelInit();
     if (model_spec != "gcc" && model_spec != "icc") {
@@ -368,40 +330,28 @@ IdiomModel::IdiomModel(string model_spec) {
     if (!(iss >> prob_threshold)) prob_threshold = 0.5;
 }
 
-IdiomSet IdiomModel::copyNormalIdioms() {
-    return normal;
-}
-
-IdiomSet IdiomModel::copyPrefixIdioms() {
-    return prefix;
-}
-
 ProbabilityCalculator::ProbabilityCalculator(CodeRegion *reg, CodeSource *source, Parser* p, string model_spec):
     model(model_spec), cr(reg), cs(source), parser(p) 
 {
 }
 
 double ProbabilityCalculator::calcProbByMatchingIdioms(Address addr) {
-    if (!cr->contains(addr)) return -1; 
+    if (!cr->contains(addr)) return -1;
+//    if (addr !=0x804e745) return -1;
     double w = model.getBias();
-    IdiomSet is = model.copyNormalIdioms();
     bool valid = true;
-    w += calcForwardWeights(0, addr, is, valid);
-//    fprintf(stderr, "w = %.6lf\n", w);
+//    printf("weight before forward match %.10lf\n", w);
+    w += calcForwardWeights(0, addr, model.getNormalIdiomTreeRoot(), valid);
+//    printf("weight after forward match %.10lf\n", w);
     if (valid) {
-        is = model.copyPrefixIdioms();
-	set<Idiom> matched;
-	w += calcBackwardWeights(0, addr, is, matched);
-	/*
-        fprintf(stderr, "w = %.6lf\n", w);
-        for (auto mit = matched.begin(); mit != matched.end(); ++mit) {
-            fprintf(stderr, "prefix match %s\n", mit->human_format().c_str());
-        }
-	*/
+	set<IdiomPrefixTree*> matched;
+	w += calcBackwardWeights(0, addr, model.getPrefixIdiomTreeRoot(), matched);
+//	printf("weight after backward match %.10lf\n", w);
         double prob = ((double)1) / (1 + exp(-w));
-        return first_prob[addr] = prob;
+//	printf("prob %.10lf\n", prob);
+//	exit(0);
+        return first_prob[addr] = prob;	
     } else return 0;
-//    }
 }
 
 void ProbabilityCalculator::calcProbByEnforcingConstraints() {
@@ -461,184 +411,160 @@ bool ProbabilityCalculator::isFEP(Address addr) {
     if (prob >= model.getProbThreshold()) return true; else return false;
 }
 
-double ProbabilityCalculator::calcForwardWeights(int cur, Address addr, IdiomSet &is, bool &valid) {
+double ProbabilityCalculator::calcForwardWeights(int cur, Address addr, IdiomPrefixTree *tree, bool &valid) {
     if (addr >= cr->high()) return 0;
-    if (is.size() == 0) return 0;
-    Instruction::Ptr insn;
-    InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(addr)),  30, cs->getArch());
-    
+//    printf("Start matching at %lx for %dth idiom term\n", addr, cur);
+
+    double w = 0;
+    if (tree->isFeature()) w = tree->getWeight();
+
+    if (tree->isLeafNode()) return w;
+
+
     unsigned short entry_id, len;
+    if (!getOpcode(entry_id, len, addr)) {
+        valid = false;
+	return 0;
+    }
+//    printf("  decode entry_id %x\n", entry_id);
+    IdiomPrefixTree::ChildrenType children = tree->findChildrenWithOpcode(entry_id);
+//    printf("  match entry_id to find %u candidates\n", children.size());
+    if (children.size() == 0) return 0;
+
+    unsigned short arg1, arg2;
+    if (!getArgs(arg1, arg2, addr)) {
+        valid = false;
+	return 0;
+    }
+    children = tree->findChildrenWithArgs(arg1, arg2, children);
+//    printf("  decode operands %x %x\n", arg1, arg2);
+//    printf("  match operands to find %u candidates\n", children.size());
+    if (children.size() == 0) return 0;
+
+    for (auto cit = children.begin(); cit != children.end() && valid; ++cit) {
+        w += calcForwardWeights(cur + 1, addr + len, cit->second, valid);
+	if (valid && cit->first.entry_id == WILDCARD_ENTRY_ID) {
+	    Address next = addr + len;
+	    if (!getOpcode(entry_id, len, next)) {
+	        assert("should have changed valide to false" && 0);
+
+	    }
+	    w += calcForwardWeights(cur + 1, next + len, cit->second, valid);
+	}
+    }
+            
+    // the return value is not important if "valid" becomes false
+    return w;
+}
+
+double ProbabilityCalculator::calcBackwardWeights(int cur, Address addr, IdiomPrefixTree *tree, set<IdiomPrefixTree*> &matched) {
+    double w = 0;
+    if (tree->isFeature()) {
+        if (matched.find(tree) == matched.end()) {
+//	    printf("Backward match at %lx for weight %.10lf\n", addr, tree->getWeight());
+	    matched.insert(tree);
+	    w += tree->getWeight();
+	}
+    }
+//    printf("Start matching at %lx for %dth idiom term\n", addr, cur);
+
+    if (tree->isLeafNode()) return w;
+
+    for (Address prevAddr = addr - 1; prevAddr >= cr->low() && addr - prevAddr <= 15; --prevAddr) {
+	unsigned short entry_id, len;
+	if (!getOpcode(entry_id, len, prevAddr)) continue;
+	if (prevAddr + len != addr) continue;
+
+	IdiomPrefixTree::ChildrenType children = tree->findChildrenWithOpcode(entry_id);
+	if (children.size() == 0) continue;
+	
+	unsigned short arg1, arg2;
+	if (!getArgs(arg1, arg2, prevAddr)) continue;
+	children = tree->findChildrenWithArgs(arg1, arg2, children);
+        if (children.size() == 0) continue;
+
+        for (auto cit = children.begin(); cit != children.end(); ++cit)
+	    w += calcBackwardWeights(cur + 1, prevAddr , cit->second, matched);
+
+    }
+    return w;
+}
+
+bool ProbabilityCalculator::getOpcode(unsigned short &entry_id, unsigned short &len, Address addr) {
+    Instruction::Ptr insn;
+    InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(addr)),  30, cs->getArch()); 
     if (opcodeCache.find(addr) != opcodeCache.end()) {
         const pair<unsigned short, unsigned short> &val = opcodeCache[addr];
 	entry_id = val.first;
 	len = val.second;
-	// We have decoded it before and it is invalid
-	if (len == 0) { 
-	    valid = false;
-	    return 0;
-	}
+	if (len == 0) return false;
     } else {
         insn = dec.decode();
 	if (!insn) {
-	    // We decoded junk
-	    opcodeCache[addr] = make_pair(0xffff, 0);
-	    valid = false;
-	    return 0;
+	    opcodeCache[addr] = make_pair(JUNK_OPCODE, 0);
+	    return false;
 	}
-
-        len = insn->size();
-	// This is still invalid
+	len = insn->size();
 	if (len == 0) {
-	    valid = false;
-	    return 0;
+	    opcodeCache[addr] = make_pair(JUNK_OPCODE, 0);
+	    return false;
 	}
-        const Operation & op = insn->getOperation();
-        entry_id = op.getID() + 1;
+	
+	const Operation & op = insn->getOperation();
+	entry_id = op.getID() + 1;
 	opcodeCache[addr] = make_pair(entry_id, len);
-    }
+    }    
+    return true;
+}
 
-    is.deleteUnmatch(cur, entry_id);
-    if (is.size() == 0) return 0;
-
-    unsigned short arg1, arg2;
+bool ProbabilityCalculator::getArgs(unsigned short &arg1, unsigned short &arg2, Address addr) {
+    Instruction::Ptr insn;
+    InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(addr)),  30, cs->getArch()); 
     if (operandCache.find(addr) != operandCache.end()) {
         const pair<unsigned short, unsigned short> &val = operandCache[addr];
 	arg1 = val.first;
 	arg2 = val.second;
     } else {
-
+    
         if (!insn) insn = dec.decode();
 
-        vector<Operand> ops;
-        insn->getOperands(ops);
-        int args[2] = {NOARG,NOARG};
-	
+	vector<Operand> ops;
+	insn->getOperands(ops);
+	int args[2] = {NOARG,NOARG};
 	for(unsigned int i=0;i<2 && i<ops.size();++i) {
 	    Operand & op = ops[i];
 	    if (op.getValue()->size() == 0) {
-	        // This is actually an invalid instruction with valid opcode
-		// so modify the opcode cache to make it invalid
-		opcodeCache[addr] = make_pair(0xffff,0);
-		valid = false;
-		return 0;
+		// This is actually an invalid instruction with valid opcode
+    		// so modify the opcode cache to make it invalid
+		opcodeCache[addr] = make_pair(JUNK_OPCODE, 0);
+		return false;
 	    }
+
 	    if(!op.readsMemory() && !op.writesMemory()) {
 	        // register or immediate
                 set<RegisterAST::Ptr> regs;
 		op.getReadSet(regs);
-		op.getWriteSet(regs);
-
-                if(!regs.empty()) {
+		op.getWriteSet(regs);  
+    	        
+		if(!regs.empty()) {
 		    if (regs.size() > 1) {
 		        args[i] = MULTIREG;
 		    } else {
 		        args[i] = (*regs.begin())->getID();
 		    }
 		} else {
-                    // immediate
+		    // immediate
                     args[i] = IMMARG;
                 }
             } else {
 	        args[i] = MEMARG; 
             }
         }
-	arg1 = args[0];
-	arg2 = args[1];
+        arg1 = args[0];
+        arg2 = args[1];
 	operandCache[addr] = make_pair(arg1, arg2);
     }
-    is.deleteUnmatch(cur, arg1, arg2);
-    if (is.size() == 0) return 0;
-
-    double w = is.matchForwardAndDelete(cur, entry_id, arg1, arg2);
-    // the return value is not important if "valid" becomes false
-    return w + calcForwardWeights(cur + 1, addr + len , is, valid);
-}
-
-double ProbabilityCalculator::calcBackwardWeights(int cur, Address addr, IdiomSet &is, set<Idiom> &matched) {
-    if (is.size() == 0) return 0;
-    double w;
-    for (Address prevAddr = addr - 1; prevAddr >= cr->low() && addr - prevAddr <= 15; --prevAddr) {
-        Instruction::Ptr insn;
-	InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(prevAddr)),  30, cs->getArch()); 
-	unsigned short entry_id, len;
-	if (opcodeCache.find(prevAddr) != opcodeCache.end()) {
-	    const pair<unsigned short, unsigned short> &val = opcodeCache[prevAddr];
-	    entry_id = val.first;
-	    len = val.second;
-	    if (len == 0) continue;
-	} else {
-	    insn = dec.decode();
-	    if (!insn) {
-	        opcodeCache[prevAddr] = make_pair(0xffff, 0);
-		continue;
-	    }
-	    
-	    len = insn->size();
-	    if (len == 0) continue;
-	    const Operation & op = insn->getOperation();
-	    entry_id = op.getID() + 1;
-	    opcodeCache[prevAddr] = make_pair(entry_id, len);
-	}
-	if (prevAddr + len != addr) continue;
-	IdiomSet is_copy = is;
-	is_copy.deleteUnmatch(cur, entry_id);
-	if (is_copy.size() == 0) continue;
-	
-	unsigned short arg1, arg2;
-	if (operandCache.find(prevAddr) != operandCache.end()) {
-	    const pair<unsigned short, unsigned short> &val = operandCache[prevAddr];
-	    arg1 = val.first;
-	    arg2 = val.second;
-	} else {
-
-            if (!insn) insn = dec.decode();
-
-	    vector<Operand> ops;
-	    insn->getOperands(ops);
-	    int args[2] = {NOARG,NOARG};
-	    bool validOperand = true;
-	    for(unsigned int i=0;i<2 && i<ops.size();++i) {
-	        Operand & op = ops[i];
-		if (op.getValue()->size() == 0) {
-		    // This is actually an invalid instruction with valid opcode
-    		    // so modify the opcode cache to make it invalid
-		    opcodeCache[prevAddr] = make_pair(0xffff,0);
-		    validOperand = false;
-		    break;
-	        }
-		if(!op.readsMemory() && !op.writesMemory()) {
-		    // register or immediate
-                    set<RegisterAST::Ptr> regs;
-		    op.getReadSet(regs);
-		    op.getWriteSet(regs);
-		    
-		    if(!regs.empty()) {
-		        if (regs.size() > 1) {
-			    args[i] = MULTIREG;
-			} else {
-			    args[i] = (*regs.begin())->getID();
-			}
-		    } else {
-		        // immediate
-                        args[i] = IMMARG;
-                    }
-                } else {
-		    args[i] = MEMARG; 
-                }
-            }
-	    if (!validOperand) continue;
-	    arg1 = args[0];
-            arg2 = args[1];
-	    operandCache[prevAddr] = make_pair(arg1, arg2);
-        }
-        is_copy.deleteUnmatch(cur, arg1, arg2);
-        if (is_copy.size() == 0) return 0;
-
-        w += is_copy.matchBackwardAndDelete(cur, entry_id, arg1, arg2, matched);
-        w += calcBackwardWeights(cur + 1, prevAddr , is_copy, matched);
-
-    }
-    return w;
+    return true;
 }
 
 bool ProbabilityCalculator::enforceOverlappingConstraints(Function *f, Address cur_addr, double cur_prob) {
