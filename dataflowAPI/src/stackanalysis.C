@@ -54,6 +54,7 @@ const StackAnalysis::Height StackAnalysis::Height::top(StackAnalysis::Height::un
 
 AnnotationClass <StackAnalysis::Intervals> Stack_Anno(std::string("Stack_Anno"));
 
+void dfs(Block*, std::map<Block*,int>&, std::set<Block*>&, std::vector<Block*>&);
 
 //
 //
@@ -82,11 +83,29 @@ bool StackAnalysis::analyze()
     stackanalysis_printf("\tSummarizing block effects\n");
     summarizeBlocks();
     
+    // Perform a DFS to find any cycles in the CFG
+    std::queue<Block*> dfs_worklist;
+    for (auto iter = func->blocks().begin(); iter != func->blocks().end(); ++iter) {
+        dfs_worklist.push(*iter);
+    }
+    std::map<Block*, int> state;
+    std::set<Block*> inCycles;
+    std::vector<Block*> path;
+    while (!dfs_worklist.empty()) {
+        Block* curBlock = dfs_worklist.front(); dfs_worklist.pop();
+        dfs(curBlock, state, inCycles, path);
+    }
+    if (inCycles.size()){
+        for (auto iter = inCycles.begin(); iter != inCycles.end(); ++iter) {
+            stackanalysis_printf("\t 0x%lx\n", (*iter)->start());
+        }
+    }
+
     stackanalysis_printf("\tPerforming fixpoint analysis\n");
-    fixpoint();
+    fixpoint(inCycles);
 
     stackanalysis_printf("\tCreating SP interval tree\n");
-    summarize();
+    summarize(inCycles);
 
     func->addAnnotation(intervals_, Stack_Anno);
 
@@ -98,6 +117,59 @@ bool StackAnalysis::analyze()
 			 func->name().c_str());
    return true;
 }
+
+// Copied from SymEval.C
+// DFS from the BB given by source
+// If we meet a BB twice without having to backtrack first,
+// insert that BB into inCycles
+//
+// A BB has state[n] > 0 if it is on the path currently being explored
+void dfs(Block* source, std::map<Block*,int> &state, std::set<Block*>& inCycles, std::vector<Block*>& path) {
+    auto stateIter = state.find(source);
+    if (stateIter == state.end()) {
+        state.insert(make_pair(source, 1));
+        stateIter = state.find(source);
+    } else {
+        (*stateIter).second++;
+    }
+    path.push_back(source);
+
+
+    for (auto edgeIter = source->targets().begin();
+            edgeIter != source->targets().end(); 
+            ++edgeIter) {
+        Edge* edge = *edgeIter;
+        if (edge->sinkEdge() || edge->interproc()) continue;
+        Block* target = edge->trg();
+
+        auto targetStateIter = state.find(target);
+        bool done = (targetStateIter != state.end());
+
+        if (done && ((*targetStateIter).second > 0)) {
+            inCycles.insert(target);
+
+            /* Also add all blocks on current path that are part of this cycle */
+            bool partOfCycle = false;
+            for (auto pathIter = path.begin(); pathIter != path.end(); ++pathIter) {
+                Block* cur = *pathIter;
+                if (partOfCycle) {
+                    inCycles.insert(cur);
+                }
+                if (cur == target) {
+                    partOfCycle = true;
+                }
+            }
+        }
+
+        if (!done) {
+            dfs(target, state, inCycles,  path);
+        }
+    }
+
+    (*stateIter).second--;
+    path.pop_back();
+}
+
 
 // We want to create a transfer function for the block as a whole. 
 // This will allow us to perform our fixpoint calculation over
@@ -176,7 +248,8 @@ void add_target(std::queue<Block*>& worklist, Edge* e)
 	worklist.push(e->trg());
 }
 
-void StackAnalysis::fixpoint() {
+
+void StackAnalysis::fixpoint(std::set<Block*>& inCycles) {
   std::queue<Block *> worklist;
   
   //Intraproc epred; // ignore calls, returns in edge iteration
@@ -188,7 +261,9 @@ void StackAnalysis::fixpoint() {
   worklist.push(func->entry());
 
   Block *entry = func->entry();
+ 
   
+
   while (!worklist.empty()) {
     Block *block = worklist.front();
     stackanalysis_printf("\t Fixpoint analysis: visiting block at 0x%lx\n", block->start());
@@ -226,7 +301,8 @@ void StackAnalysis::fixpoint() {
     // Step 3: calculate our new outs
     
     blockEffects[block].apply(input,
-                              blockOutputs[block]);
+                              blockOutputs[block],
+                              (inCycles.find(block) == inCycles.end() ? false : true));
     
     stackanalysis_printf("\t ... output from block: %s\n", format(blockOutputs[block]).c_str());
     
@@ -241,7 +317,7 @@ void StackAnalysis::fixpoint() {
 
 
 
-void StackAnalysis::summarize() {
+void StackAnalysis::summarize(std::set<Block*>& inCycles) {
 	// Now that we know the actual inputs to each block,
 	// we create intervals by replaying the effects of each
 	// instruction. 
@@ -251,8 +327,10 @@ void StackAnalysis::summarize() {
 	Function::blocklist & bs = func->blocks();
 	Function::blocklist::iterator bit = bs.begin();
 	for( ; bit != bs.end(); ++bit) {
-		Block *block = *bit;
+        Block *block = *bit;
+		
 		RegisterState input = blockInputs[block];
+        const RegisterState blockInput = input;
 
 		for (std::map<Offset, TransferFuncs>::iterator iter = insnEffects[block].begin(); 
 			iter != insnEffects[block].end(); ++iter) {
@@ -264,10 +342,12 @@ void StackAnalysis::summarize() {
 
 			for (TransferFuncs::iterator iter2 = xferFuncs.begin();
 				iter2 != xferFuncs.end(); ++iter2) {
-					input[iter2->target] = iter2->apply(input);
+					input[iter2->target] = iter2->apply(input, blockInput,
+                            (inCycles.find(block) == inCycles.end() ? false : true));
 			}
 		}
 		(*intervals_)[block][block->end()] = input;
+
         assert(input == blockOutputs[block]);
 	}
 }
@@ -988,9 +1068,9 @@ bool StackAnalysis::TransferFunc::isDelta() const {
 
 // Destructive update of the input map. Assumes inputs are absolute, uninitalized, or 
 // bottom; no deltas.
-StackAnalysis::Height StackAnalysis::TransferFunc::apply(const RegisterState &inputs ) const {
+StackAnalysis::Height StackAnalysis::TransferFunc::apply(const RegisterState &inputs, const RegisterState &blockInputs, bool inCycle) const {
 	assert(target.isValid());
-	// Bottom stomps everything
+    // Bottom stomps everything
 	if (isBottom()) {
 		return Height::bottom;
 	}
@@ -1003,6 +1083,15 @@ StackAnalysis::Height StackAnalysis::TransferFunc::apply(const RegisterState &in
 	else {
 		input = Height::top;
 	}
+    
+    
+    iter = blockInputs.find(target);
+    Height origBlockInput;
+    if (iter != blockInputs.end()) {
+        origBlockInput = iter->second;
+    } else {
+        origBlockInput = Height::top;
+    }
 
    if (isAbs()) {
       // We cannot be an alias, as the absolute removes that. 
@@ -1015,11 +1104,24 @@ StackAnalysis::Height StackAnalysis::TransferFunc::apply(const RegisterState &in
       assert(!isAbs());
       // Copy the input value from whatever we're an alias of.
 	  RegisterState::const_iterator iter2 = inputs.find(from);
-	  if (iter2 != inputs.end()) input = iter2->second;
-	  else input = Height::top;
+	  if (iter2 != inputs.end()) {
+        input = iter2->second;
+      }
+	  else {
+          input = Height::top;
+      }
    }
    if (isDelta()) {
-      input += delta;
+       Height output = input + delta;
+       if (inCycle && // basic block is part of a cycle
+               (delta != Height(0)) && // meaningful delta in effect
+               (output != origBlockInput) && // update would actually change our calculated height
+               (origBlockInput != Height::top)) // this is not the first time performing apply() on this block
+       {
+           input = Height::bottom;
+       } else {
+           input += delta;
+       }
    }
    return input;
 }
@@ -1109,15 +1211,16 @@ void StackAnalysis::TransferFunc::accumulate(std::map<MachRegister, TransferFunc
    return;
 }
 
-void StackAnalysis::SummaryFunc::apply(const RegisterState &in, RegisterState &out) const {
+void StackAnalysis::SummaryFunc::apply(const RegisterState &in, RegisterState &out, bool inCycle) const {
 	// Copy all the elements we don't have xfer funcs for. 
-	out = in;
+	const RegisterState blockIn = in;
+    out = in;
 
 	// We apply in parallel, since all summary funcs are from the start of the block.
 	for (TransferSet::const_iterator iter = accumFuncs.begin();
 		iter != accumFuncs.end(); ++iter) {
 		assert(iter->first.isValid());
-		out[iter->first] = iter->second.apply(in);
+        out[iter->first] = iter->second.apply(in, in, inCycle);
 	}
 }
 
