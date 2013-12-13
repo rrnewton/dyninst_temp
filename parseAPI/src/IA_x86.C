@@ -38,6 +38,7 @@
 #include "debug_parse.h"
 #include "dataflowAPI/h/slicing.h"
 #include "dataflowAPI/h/SymEval.h"
+#include "dataflowAPI/h/stackanalysis.h"
 //#include "StackTamperVisitor.h"
 #include "instructionAPI/h/Visitor.h"
 
@@ -283,20 +284,23 @@ bool IA_IAPI::isTailCall(Function * context, EdgeTypeEnum type, unsigned int) co
            prevInsn = prevIter->second;
         }
 
+        bool foundCandidate = false;
 
         if(prevInsn->getOperation().getID() == e_leave)
         {
            parsing_printf("\tprev insn was leave, TAIL CALL\n");
-           tailCalls[type] = true;
-           return true;
+//           tailCalls[type] = true;
+//           return true;
+            foundCandidate = true;
         }
         else if(prevInsn->getOperation().getID() == e_pop)
         {
             if(prevInsn->isWritten(framePtr[_isrc->getArch()]))
             {
                 parsing_printf("\tprev insn was %s, TAIL CALL\n", prevInsn->format().c_str());
-                tailCalls[type] = true;
-                return true;
+//                tailCalls[type] = true;
+//                return true;
+                foundCandidate = true;
             }
         }
         else if(prevInsn->getOperation().getID() == e_add)
@@ -304,10 +308,41 @@ bool IA_IAPI::isTailCall(Function * context, EdgeTypeEnum type, unsigned int) co
             if(prevInsn->isWritten(stackPtr[_isrc->getArch()]))
             {
                 parsing_printf("\tprev insn was %s, TAIL CALL\n", prevInsn->format().c_str());
+//                tailCalls[type] = true;
+//                return true;
+                foundCandidate = true;
+            } else {
+                parsing_printf("\tprev insn was %s, not tail call\n", prevInsn->format().c_str());
+            }
+        } 
+        // TODO: Add LEA case
+    
+        // Use stack analysis to validate potential tailcall site    
+        if (foundCandidate) {
+            
+            parsing_printf("\tfound candidate tail call; verifying with stack analysis\n");
+
+            // Perform stack analysis to verify that 
+            // (1) stack height at block entry is nonzeo and 
+            // (2) stack height at block exit is zero
+
+            StackAnalysis sa(context);
+            StackAnalysis::Height entryHeight, exitHeight;
+        
+            Block* curBlock = _obj->findBlockByEntry(_cr, allInsns.begin()->first);
+
+            entryHeight = sa.findSP(curBlock, allInsns.begin()->first);
+            exitHeight = sa.findSP(curBlock, allInsns.rbegin()->first);
+
+            parsing_printf("\t\tSP height @ block entry = %s; @ block exit = %s\n", entryHeight.format().c_str(), exitHeight.format().c_str());
+
+            if ((entryHeight != 0) && (exitHeight == 0)) {
+                parsing_printf("\t\tFOUND VALID TAIL CALL\n");
                 tailCalls[type] = true;
                 return true;
+            } else {
+                parsing_printf("\t\tTentative tail call is NOT a tail call\n");
             }
-            parsing_printf("\tprev insn was %s, not tail call\n", prevInsn->format().c_str());
         }
     }
 
