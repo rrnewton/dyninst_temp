@@ -36,6 +36,7 @@
 #include "Symbol.h"
 #include "Module.h"
 #include "Region.h"
+#include "LineInformation.h"
 
 #include "Annotatable.h"
 #include "Serialization.h"
@@ -611,7 +612,7 @@ class SYMTAB_EXPORT Symtab : public LookupInterface,
    FuncRangeLookup *func_lookup;
 
    // Line information map from module name to line info
-   dyn_hash_map<std::string, LineInformation> *lineInfo;
+   dyn_hash_map<std::string, LineInformation> lineInfo;
 
    //Don't use obj_private, use getObject() instead.
  public:

@@ -141,12 +141,14 @@ class ProbabilityCalculator {
     CodeRegion* cr;
     CodeSource* cs;
     Parser* parser;
-    // The probability calculated by applying idiom model
-    dyn_hash_map<Address, double> first_prob;
-    // The probability calculated by enforcing overlapping and caller-callee constraints
-    dyn_hash_map<Address, double> final_prob;
+    // The probability of each address to be FEP
+    dyn_hash_map<Address, double> FEPProb;
+    // The highest probability reaching to this address in enforcing overlapping constraints
+    dyn_hash_map<Address, double> reachingProb;
+    
+    dyn_hash_set<Function *> finalized;
 
-    // To avoid reduntant decoding
+    // save the idiom extraction results for idiom matching at different addresses 
     dyn_hash_map<Address, std::pair<unsigned short, unsigned short> > opcodeCache, operandCache;
 
     // Recursively mathcing normal idioms and calculate weights
@@ -156,16 +158,28 @@ class ProbabilityCalculator {
     // Enforce the overlapping constraints and
     // return true if the cur_addr doesn't conflict with other identified functions,
     // otherwise return false
-    bool enforceOverlappingConstraints(Function *f, Address cur_addr, double cur_prob);
+    bool enforceOverlappingConstraints(Function *f, 
+                                       Address cur_addr, 
+				       double cur_prob,
+				       dyn_hash_map<Address, double> &newFEPProb,
+				       dyn_hash_map<Address, double> &newReachingProb,
+				       dyn_hash_set<Function*> &newDiscoveredFuncs);
 
     bool getOpcode(unsigned short &entry_id, unsigned short &len, Address addr);
     bool getArgs(unsigned short &arg1, unsigned short &arg2, Address addr);
+
+    void Finalize(dyn_hash_map<Address, double> &newFEPProb,
+                  dyn_hash_map<Address, double> &newReachingProb,
+		  dyn_hash_set<Function*> &newDiscoveredFuncs);
+    void Remove(dyn_hash_set<Function*> &newDiscoveredFuncs);
+    double getReachingProb(Address addr);
+   
 
 public:
     ProbabilityCalculator(CodeRegion *reg, CodeSource *source, Parser *parser, std::string model_spec);
     double calcProbByMatchingIdioms(Address addr);
     void calcProbByEnforcingConstraints();
-    double getProb(Address addr);
+    double getFEPProb(Address addr);
     bool isFEP(Address addr);
 };
 

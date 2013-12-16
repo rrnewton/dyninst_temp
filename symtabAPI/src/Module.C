@@ -433,7 +433,7 @@ Module::~Module()
 		  }
 		  else
 		  {
-		          if (!exec_->lineInfo->erase(fullName_)) exec_->lineInfo->erase(fileName_);
+		          if (!exec_->lineInfo.erase(fullName_)) exec_->lineInfo.erase(fileName_);
 		  }
       }
    }

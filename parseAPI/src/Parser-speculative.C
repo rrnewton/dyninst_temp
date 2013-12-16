@@ -280,6 +280,11 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
 	curAddr = gapEnd;
     }
 
+    if (obj().cs()->getAddressWidth() == 8) 
+        model_spec = "64-bit-" + model_spec;
+    else
+        model_spec = "32-bit-" + model_spec;
+
     // 1. Load the pre-trained idiom model:
     // In the real world, we may have to decide which model to load
     // depending on the provenance of the binary. 
@@ -308,7 +313,6 @@ void Parser::probabilistic_gap_parsing(CodeRegion *cr, string model_spec) {
         gapStart = gaps[i].first;
 	gapEnd = gaps[i].second;
 	for (curAddr = gapStart; curAddr < gapEnd; ++curAddr) {
-//	    printf("%lx %.10lf\n", curAddr, pc.getProb(curAddr));
 	    if (pc.isFEP(curAddr) && cr->isCode(curAddr)) {
 	        parsing_printf("[%s] find gap FEP at %lx\n", FILE__, curAddr);
                 parse_at(cr,curAddr,false,GAP);

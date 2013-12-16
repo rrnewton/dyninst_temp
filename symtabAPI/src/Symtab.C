@@ -1894,9 +1894,6 @@ Symtab::~Symtab()
    //fprintf(stderr, "%s[%d]:  symtab DTOR, mf = %p: %s\n", FILE__, __LINE__, mf, mf->filename().c_str());
    if (mf) MappedFile::closeMappedFile(mf);
 
-   // Delete line information
-   delete lineInfo;
-
 }	
 
 #if !defined(SERIALIZATION_DISABLED)
@@ -2298,7 +2295,7 @@ bool Symtab::addRegion(Region *sec)
 
 void Symtab::parseLineInformation()
 {
-   lineInfo = new dyn_hash_map <std::string, LineInformation>;
+   lineInfo.clear();
 
    Object *linkedFile = getObject();
 	if (!linkedFile)
@@ -2308,12 +2305,12 @@ void Symtab::parseLineInformation()
 #endif
 		return;
 	}
-   linkedFile->parseFileLineInfo(this, *lineInfo);
+   linkedFile->parseFileLineInfo(this, lineInfo);
 
    isLineInfoValid_ = true;	
    dyn_hash_map <std::string, LineInformation>::iterator iter;
 
-   for (iter = lineInfo->begin(); iter!=lineInfo->end(); iter++)
+   for (iter = lineInfo.begin(); iter!=lineInfo.end(); iter++)
    {
       Module *mod = NULL;
       bool result = findModuleByName(mod, iter->first);

@@ -306,10 +306,9 @@ IdiomPrefixTree::ChildrenType IdiomPrefixTree::findChildrenWithArgs(unsigned sho
 
 IdiomModel::IdiomModel(string model_spec) {
     IdiomModelInit();
-    if (model_spec != "gcc" && model_spec != "icc") {
-        assert("We currently only support the 'gcc' model and 'icc' model\n" && 0);
+    if (idiomModelDesc.find(model_spec) == idiomModelDesc.end()) {
+       fprintf(stderr, "Does not have model for %s\n", model_spec.c_str());
     }
-    
     int totalFeatures;
     char buf[1024];
     double weights;
@@ -337,30 +336,40 @@ ProbabilityCalculator::ProbabilityCalculator(CodeRegion *reg, CodeSource *source
 
 double ProbabilityCalculator::calcProbByMatchingIdioms(Address addr) {
     if (!cr->contains(addr)) return -1;
-//    if (addr !=0x804e745) return -1;
+    if (addr !=0x41195e) return -1;
     double w = model.getBias();
     bool valid = true;
-//    printf("weight before forward match %.10lf\n", w);
+    printf("weight before forward match %.10lf\n", w);
     w += calcForwardWeights(0, addr, model.getNormalIdiomTreeRoot(), valid);
-//    printf("weight after forward match %.10lf\n", w);
+    printf("weight after forward match %.10lf\n", w);
     if (valid) {
 	set<IdiomPrefixTree*> matched;
 	w += calcBackwardWeights(0, addr, model.getPrefixIdiomTreeRoot(), matched);
-//	printf("weight after backward match %.10lf\n", w);
+	printf("weight after backward match %.10lf\n", w);
         double prob = ((double)1) / (1 + exp(-w));
-//	printf("prob %.10lf\n", prob);
-//	exit(0);
-        return first_prob[addr] = prob;	
-    } else return 0;
+	printf("prob %.10lf\n", prob);
+	exit(0);
+        return FEPProb[addr] = reachingProb[addr] = prob;	
+    } else return FEPProb[addr] = reachingProb[addr] = 0;
 }
 
 void ProbabilityCalculator::calcProbByEnforcingConstraints() {
+
+    // Initialize our knowledge about non-gap functions
+    finalized.clear();
+    for (auto fit = parser->obj().funcs().begin(); fit != parser->obj().funcs().end(); ++fit) {    
+        finalized.insert(*fit);
+	for (auto bit = (*fit)->blocks().begin(); bit != (*fit)->blocks().end(); ++bit) {
+	    for (Address addr = (*bit)->start(); addr != (*bit)->end(); ++addr)
+	        reachingProb[addr] = 2;
+	}
+    }
 
     priority_queue<ProbAndAddr> q;
     double threshold = model.getProbThreshold();
 
     // Use the prob from matching idioms and push all the FEP candidates into the priority queue
-    for (auto pit = first_prob.begin(); pit != first_prob.end(); ++pit)
+    for (auto pit = FEPProb.begin(); pit != FEPProb.end(); ++pit)
         if (pit->second >= threshold) 
 	    q.push(ProbAndAddr(pit->first, pit->second));
     
@@ -369,45 +378,40 @@ void ProbabilityCalculator::calcProbByEnforcingConstraints() {
 	q.pop();
 
 	//This is an out-dated item. The address has either improved prob by
-	//applying call consistency constraints or 0 prob by applying 
-	//overlapping constraints.
-	if (final_prob.find(pa.addr) != final_prob.end() && double_cmp(final_prob[pa.addr], pa.prob) != 0) continue;
+	//applying call consistency constraints or 0 prob by applying overlapping constraints.
+	if (double_cmp(FEPProb[pa.addr], pa.prob) != 0) continue;
 
-	parser->parse_at(cr, pa.addr, false, GAP);
+	parser->parse_at(cr, pa.addr, true, GAP);
 
 	Function *f = parser->findFuncByEntry(cr, pa.addr);
 	assert(f != NULL);
 
-//	fprintf(stderr, "Enforcing constraints at %lx with prob %.6lf\n", pa.addr, pa.prob);
+	fprintf(stderr, "Enforcing constraints at %lx with prob %.6lf\n", pa.addr, pa.prob);
 	// Enforce the overlapping constraints
-        if (enforceOverlappingConstraints(f, pa.addr, pa.prob)) {
+	dyn_hash_map<Address, double> newFEPProb, newReachingProb;
+	dyn_hash_set<Function *> newDiscoveredFuncs;
+        if (enforceOverlappingConstraints(f, pa.addr, pa.prob, newFEPProb, newReachingProb, newDiscoveredFuncs)) {
+	    Finalize(newFEPProb, newReachingProb, newDiscoveredFuncs);
 	    // Enforce the call consistency constraints
-	    auto call_edges = f->callEdges();
-	    for (auto eit = call_edges.begin(); eit != call_edges.end(); ++eit) {
-	        // TODO: Can I assume that the first address of the target block of a call edge is a FEP?
-		Address target = (*eit)->trg()->start();
-//		fprintf(stderr, "    find direct call target %lx with prob %.6lf\n", target, getProb(target));
-		if (first_prob.find(target) == first_prob.end()) continue;
-		if (target == pa.addr) continue;
-		double prob = getProb(target);
-		if (double_cmp(pa.prob, prob) > 0) {
-		    final_prob[target] = pa.prob;
-		    q.push(ProbAndAddr(target, pa.prob));
-		}
-	    }
-	}	      
+	} else {
+	    Remove(newDiscoveredFuncs);
+	}
     }
 
 }
 
-double ProbabilityCalculator::getProb(Address addr) {
-    if (final_prob.find(addr) != final_prob.end()) return final_prob[addr];
-    if (first_prob.find(addr) != first_prob.end()) return first_prob[addr];
-    return -1;
+double ProbabilityCalculator::getFEPProb(Address addr) {
+    if (FEPProb.find(addr) != FEPProb.end()) return FEPProb[addr];
+    return 0;
+}
+
+double ProbabilityCalculator::getReachingProb(Address addr) {
+    if (reachingProb.find(addr) != reachingProb.end()) return reachingProb[addr];
+    return 0;
 }
 
 bool ProbabilityCalculator::isFEP(Address addr) {
-    double prob = getProb(addr);
+    double prob = getFEPProb(addr);
     if (prob >= model.getProbThreshold()) return true; else return false;
 }
 
@@ -419,7 +423,7 @@ double ProbabilityCalculator::calcForwardWeights(int cur, Address addr, IdiomPre
     if (tree->isFeature()) w = tree->getWeight();
 
     if (tree->isLeafNode()) return w;
-
+    
 
     unsigned short entry_id, len;
     if (!getOpcode(entry_id, len, addr)) {
@@ -446,8 +450,8 @@ double ProbabilityCalculator::calcForwardWeights(int cur, Address addr, IdiomPre
 	if (valid && cit->first.entry_id == WILDCARD_ENTRY_ID) {
 	    Address next = addr + len;
 	    if (!getOpcode(entry_id, len, next)) {
-	        assert("should have changed valide to false" && 0);
-
+	        valid = false;
+		return 0;
 	    }
 	    w += calcForwardWeights(cur + 1, next + len, cit->second, valid);
 	}
@@ -461,7 +465,7 @@ double ProbabilityCalculator::calcBackwardWeights(int cur, Address addr, IdiomPr
     double w = 0;
     if (tree->isFeature()) {
         if (matched.find(tree) == matched.end()) {
-//	    printf("Backward match at %lx for weight %.10lf\n", addr, tree->getWeight());
+	    printf("Backward match at %lx for weight %.10lf\n", addr, tree->getWeight());
 	    matched.insert(tree);
 	    w += tree->getWeight();
 	}
@@ -491,14 +495,19 @@ double ProbabilityCalculator::calcBackwardWeights(int cur, Address addr, IdiomPr
 }
 
 bool ProbabilityCalculator::getOpcode(unsigned short &entry_id, unsigned short &len, Address addr) {
-    Instruction::Ptr insn;
-    InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(addr)),  30, cs->getArch()); 
     if (opcodeCache.find(addr) != opcodeCache.end()) {
         const pair<unsigned short, unsigned short> &val = opcodeCache[addr];
 	entry_id = val.first;
 	len = val.second;
 	if (len == 0) return false;
     } else {
+        Instruction::Ptr insn;
+	unsigned char *buf = (unsigned char*)(cs->getPtrToInstruction(addr));
+	if (buf == NULL) { 
+	    opcodeCache[addr] = make_pair(JUNK_OPCODE, 0);
+	    return false;
+	}
+	InstructionDecoder dec( buf ,  30, cs->getArch()); 
         insn = dec.decode();
 	if (!insn) {
 	    opcodeCache[addr] = make_pair(JUNK_OPCODE, 0);
@@ -518,15 +527,18 @@ bool ProbabilityCalculator::getOpcode(unsigned short &entry_id, unsigned short &
 }
 
 bool ProbabilityCalculator::getArgs(unsigned short &arg1, unsigned short &arg2, Address addr) {
-    Instruction::Ptr insn;
-    InstructionDecoder dec((unsigned char*)(cs->getPtrToInstruction(addr)),  30, cs->getArch()); 
     if (operandCache.find(addr) != operandCache.end()) {
         const pair<unsigned short, unsigned short> &val = operandCache[addr];
 	arg1 = val.first;
 	arg2 = val.second;
     } else {
-    
-        if (!insn) insn = dec.decode();
+        Instruction::Ptr insn;   
+	unsigned char *buf = (unsigned char*)(cs->getPtrToInstruction(addr));
+	assert(buf != NULL);
+	
+	InstructionDecoder dec( buf ,  30, cs->getArch()); 
+	insn = dec.decode();
+	assert(insn);
 
 	vector<Operand> ops;
 	insn->getOperands(ops);
@@ -567,37 +579,75 @@ bool ProbabilityCalculator::getArgs(unsigned short &arg1, unsigned short &arg2, 
     return true;
 }
 
-bool ProbabilityCalculator::enforceOverlappingConstraints(Function *f, Address cur_addr, double cur_prob) {
-    vector<FuncExtent*> extents = f->extents();
-    for (auto eit = extents.begin(); eit != extents.end(); ++eit) 
-        for (Address addr = (*eit)->start(); addr < (*eit)->end(); ++addr) {
-	    if (addr == cur_addr) continue;
-	    double prob = getProb(addr);
-	    
-	    if (double_cmp(cur_prob, prob) < 0 || (double_cmp(cur_prob, prob) == 0 && addr < cur_addr)) {
-	        // The address cur_addr conflicts with the address addr.
-		// The address addr has larger prob to be a FEP or they have the same prob but addr is before cur_addr, 
-		// then we don't think cur_addr to be a FEP
-		final_prob[cur_addr] = 0;
-		parser->remove_func(f);
-//		fprintf(stderr, "    meet %lx with prob %.6lf\n", addr, prob);
-//		fprintf(stderr, "NOT FEP\n");
-		// We don't have to continue because we must have enforced the constraints at addr before
-		return false;
-	    } else {
-	        // The address addr should not be a FEP
-		final_prob[addr] = 0;
-//		fprintf(stderr, "    enforce %lx to be not a FEP\n", addr);
+bool ProbabilityCalculator::enforceOverlappingConstraints(Function *f, 
+                                                          Address cur_addr, 
+							  double cur_prob,
+							  dyn_hash_map<Address, double> &newFEPProb,
+							  dyn_hash_map<Address, double> &newReachingProb,
+							  dyn_hash_set<Function*> &newDiscoveredFuncs) {
+    // Only apply the overlapping constraints to un-finalized functions
+    if (finalized.find(f) != finalized.end()) return true;    
+    if (newDiscoveredFuncs.find(f) != newDiscoveredFuncs.end()) return true;
+    newDiscoveredFuncs.insert(f);
+    fprintf(stderr,"  in function at %lx\n", f->addr());
+    for (auto bit = f->blocks().begin(); bit != f->blocks().end(); ++bit) {       
+        if ((*bit)->region() != cr) continue;
+        fprintf(stderr, "  block [%lx,%lx)\n", (*bit)->start(), (*bit)->end());
+        for (Address addr = (*bit)->start(); addr < (*bit)->end(); ++addr) {
 
-		Function *addr_f = parser->findFuncByEntry(cr, addr);
-		if (addr_f != NULL) {
-//		    fprintf(stderr, "WARNING: address %lx with prob %.6lf conflicts with address %lx with prob %.6lf\n", cur_addr, cur_prob, addr, prob);
-//		    fprintf(stderr, "         and address %lx shouldn't have been parsed\n", addr);
-		    parser->remove_func(addr_f);
-		}
+	    // Meet a byte that is in a function with higher probability: conflict
+	    if (double_cmp(cur_prob, getReachingProb(addr)) < 0) {
+	        fprintf(stderr, "    conflict with %lx with reaching prob %.6lf\n", addr, getReachingProb(addr));
+		return false;
+	    } else if (double_cmp(cur_prob, getReachingProb(addr)) > 0) {
+	        newReachingProb[addr] = cur_prob;
+		newFEPProb[addr] = 0;
+	    } else {
+	        // TODO: meet a byte with same prob
 	    }
 	}
+    }
+    
+    auto call_edges = f->callEdges();
+    for (auto eit = call_edges.begin(); eit != call_edges.end(); ++eit) {
+        if ((*eit)->type() == CALL_FT) continue;
+	Address target = (*eit)->trg()->start();
+	if (reachingProb.find(target) == reachingProb.end()) continue;
+	if (double_cmp(cur_prob, getFEPProb(target)) > 0) {
+	    newFEPProb[target] = cur_prob;
+	}
+	if (double_cmp(cur_prob, getReachingProb(target)) > 0){
+	    newReachingProb[target] = cur_prob;
+	}
+	Function *callee = parser->findFuncByEntry(cr, target);
+	fprintf(stderr, "    find call target from %lx to %lx\n", (*eit)->src()->last(), target);
+	if (callee == NULL) {
+	    parser->parse_at(cr, target, true, GAP);
+	    callee = parser->findFuncByEntry(cr, target);
+//	    assert(callee != NULL);  
+	}
+	if (callee == NULL) continue;
+	if (!enforceOverlappingConstraints(callee, cur_addr, cur_prob, newFEPProb, newReachingProb, newDiscoveredFuncs)) return false;
+    }
     return true;
+}
+
+void ProbabilityCalculator::Finalize(dyn_hash_map<Address, double> &newFEPProb,
+                                     dyn_hash_map<Address, double> &newReachingProb,
+				     dyn_hash_set<Function*> &newDiscoveredFuncs) {
+    for (auto nit = newFEPProb.begin(); nit != newFEPProb.end(); ++nit) {
+        FEPProb[nit->first] = nit->second;
+    }
+    for (auto nit = newReachingProb.begin(); nit != newReachingProb.end(); ++nit) {
+        reachingProb[nit->first] = nit->second;
+    }
+    finalized.insert(newDiscoveredFuncs.begin(), newDiscoveredFuncs.end());
+}
+
+void ProbabilityCalculator::Remove(dyn_hash_set<Function*> &newDiscoveredFuncs) {
+    for (auto fit = newDiscoveredFuncs.begin(); fit != newDiscoveredFuncs.end(); ++fit) {
+       parser->remove_func(*fit); 
+    }
 }
 
 #endif
