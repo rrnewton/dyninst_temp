@@ -49,7 +49,6 @@
 #include "common/src/dthread.h"
 #include <sys/types.h>
 #include <sys/ptrace.h>
-#include <linux/ptrace.h>
 
 typedef enum __ptrace_request pt_req;
 
@@ -99,7 +98,7 @@ class DecoderLinux : public Decoder
    Dyninst::Address adjustTrapAddr(Dyninst::Address address, Dyninst::Architecture arch);
 };
 
-class linux_process : public sysv_process, public unix_process, public thread_db_process, public indep_lwp_control_process, public mmap_alloc_process, public int_followFork, public int_signalMask, public int_LWPTracking
+class linux_process : public sysv_process, public unix_process, public thread_db_process, public indep_lwp_control_process, public mmap_alloc_process, public int_followFork, public int_signalMask, public int_LWPTracking, public int_memUsage
 {
  public:
    linux_process(Dyninst::PID p, std::string e, std::vector<std::string> a, 
@@ -145,6 +144,12 @@ class linux_process : public sysv_process, public unix_process, public thread_db
    virtual FollowFork::follow_t fork_isTracking();
    virtual bool plat_lwpChangeTracking(bool b);
    virtual bool allowSignal(int signal_no);
+
+   bool readStatM(unsigned long &stk, unsigned long &heap, unsigned long &shrd);
+   virtual bool plat_getStackUsage(MemUsageResp_t *resp);
+   virtual bool plat_getHeapUsage(MemUsageResp_t *resp);
+   virtual bool plat_getSharedUsage(MemUsageResp_t *resp);
+
   protected:
    int computeAddrWidth(Dyninst::Architecture me);
 };
@@ -178,7 +183,6 @@ class linux_thread : virtual public thread_db_thread
  public:
    linux_thread(int_process *p, Dyninst::THR_ID t, Dyninst::LWP l);
 
-   linux_thread();
    virtual ~linux_thread();
 
    virtual bool plat_cont();
@@ -203,8 +207,15 @@ class linux_thread : virtual public thread_db_thread
    void setOptions();
    bool unsetOptions();
    bool getSegmentBase(Dyninst::MachRegister reg, Dyninst::MachRegisterVal &val);
-   
+
+   void postponeSyscallEvent(ArchEventLinux *event);
+   bool hasPostponedSyscallEvent();
+   ArchEventLinux *getPostponedSyscallEvent();
+
    static void fake_async_main(void *);
+
+ private:
+   ArchEventLinux *postponed_syscall_event;
 };
 
 class linux_x86_thread : virtual public linux_thread, virtual public x86_thread

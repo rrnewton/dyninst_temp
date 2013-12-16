@@ -513,7 +513,7 @@ void Parser::ProcessCFInsn(
             if(curEdge->second != NOEDGE || !dynamic_call) {
                 has_unres = true;
                 resolvable_edge = false;
-                if (curEdge->second != -1 && _obj.defensiveMode()) 
+                if ((int)curEdge->second != -1 && _obj.defensiveMode()) 
                     mal_printf("bad edge target at %lx type %d\n",
                                curEdge->first, curEdge->second);
             }
@@ -563,7 +563,8 @@ void Parser::ProcessCFInsn(
         }
 
         if (ah.isTailCall(frame.func, curEdge->second, frame.num_insns)) {
-           parsing_printf("Setting edge 0x%lx (0x%lx/0x%lx) to interproc (tail call)\n",
+            tailcall = true; 
+            parsing_printf("Setting edge 0x%lx (0x%lx/0x%lx) to interproc (tail call)\n",
                           newedge,
                           newedge->src()->start(),
                           newedge->trg()->start());

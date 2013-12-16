@@ -203,6 +203,7 @@ std::string EventType::name() const
       STR_CASE(AsyncReadAllRegs);
       STR_CASE(AsyncSetAllRegs);
       STR_CASE(AsyncFileRead);
+      STR_CASE(PostponedSyscall);
       default: return prefix + std::string("Unknown");
    }
 }
@@ -598,7 +599,6 @@ EventRPC::EventRPC(rpc_wrapper *wrapper_) :
 
 EventRPC::~EventRPC()
 {
-   memset(wrapper, 0, sizeof(wrapper));
    delete wrapper;
    wrapper = NULL;
 
@@ -1077,6 +1077,15 @@ int_eventControlAuthority *EventControlAuthority::getInternalEvent() const
    return iev;
 }
 
+EventPostponedSyscall::EventPostponedSyscall() :
+   Event(EventType(EventType::None, EventType::PostponedSyscall))
+{
+}
+
+EventPostponedSyscall::~EventPostponedSyscall()
+{
+}
+
 int_eventBreakpoint::int_eventBreakpoint(Address a, sw_breakpoint *, int_thread *thr) :
    addr(a),
    hwbp(NULL),
@@ -1352,3 +1361,4 @@ DEFN_EVENT_CAST(EventAsyncWrite, AsyncWrite)
 DEFN_EVENT_CAST(EventAsyncReadAllRegs, AsyncReadAllRegs)
 DEFN_EVENT_CAST(EventAsyncSetAllRegs, AsyncSetAllRegs)
 DEFN_EVENT_CAST(EventAsyncFileRead, AsyncFileRead)
+DEFN_EVENT_CAST(EventPostponedSyscall, PostponedSyscall)

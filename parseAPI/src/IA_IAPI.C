@@ -347,8 +347,8 @@ bool IA_IAPI::isGarbageInsn() const
         }
         case e_add:
             if (2 == curInsn()->size() && 
-                0 == ((char*)curInsn()->ptr())[0] && 
-                0 == ((char*)curInsn()->ptr())[1]) 
+                0 == curInsn()->rawByte(0) && 
+                0 == curInsn()->rawByte(1)) 
             {
                 cerr << "REACHED A 0x0000 INSTRUCTION "<< std::hex << current 
                      << std::dec <<" COUNTING AS INVALID" << endl;
@@ -370,7 +370,7 @@ bool IA_IAPI::isGarbageInsn() const
                 }
             }
 #else // faster raw-byte implementation 
-            switch (((char*)curInsn()->ptr())[0]) {
+            switch (curInsn()->rawByte(0)) {
                 case 0x06:
                 case 0x0e:
                 case 0x16:
@@ -381,7 +381,7 @@ bool IA_IAPI::isGarbageInsn() const
                     break;
                 case 0x0f:
                     if (2 == curInsn()->size() && 
-                        ((0xa0 == ((unsigned char*)curInsn()->ptr())[1]) || (0xa8 == ((unsigned char*)curInsn()->ptr())[1])))
+                        ((0xa0 == curInsn()->rawByte(1)) || (0xa8 == curInsn()->rawByte(1))))
                     {
                         ret = true;
                         cerr << "REACHED A 2-BYTE PUSH OF A SEGMENT REGISTER "<< std::hex << current 
@@ -601,8 +601,24 @@ void IA_IAPI::getNewEdges(std::vector<std::pair< Address, EdgeTypeEnum> >& outEd
         {
             parsing_printf("... indirect jump at 0x%x\n", current);
             if( num_insns == 2 ) {
+	      // Handle a pernicious indirect tail call idiom here
+	      // What we've seen is mov (%rdi), %rax; jmp *%rax
+	      // Anything that tries to go enum->jump table *should* need more than two
+	      // instructions and has not been seen in the wild....
+	      if(currBlk == context->entry()) 
+	      {
+		parsing_printf("\tIndirect branch as 2nd insn of entry block, treating as tail call\n");
+                parsing_printf("%s[%d]: indirect tail call %s at 0x%lx\n", FILE__, __LINE__,
+                               ci->format().c_str(), current);
+		outEdges.push_back(std::make_pair((Address)-1,INDIRECT));
+		tailCalls[INDIRECT]=true;
+		return;
+	      }
+	      else
+	      {
                 parsing_printf("... uninstrumentable due to 0 size\n");
                 return;
+	      }
             }
             if(isTailCall(context, INDIRECT, num_insns)) {
                 parsing_printf("%s[%d]: indirect tail call %s at 0x%lx\n", FILE__, __LINE__,

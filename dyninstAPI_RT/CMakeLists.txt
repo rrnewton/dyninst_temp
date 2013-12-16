@@ -1,7 +1,15 @@
 # CMake configuration for dyninstAPI_RT directory
+cmake_minimum_required (VERSION 2.6.4)
+project (DyninstRT)
+
+set (DYNINST_ROOT ${PROJECT_SOURCE_DIR}/..)
+
+include (${DYNINST_ROOT}/cmake/shared.cmake)
 
 include_directories (
-    ${PROJECT_SOURCE_DIR}/dyninstAPI_RT/src
+    ${DYNINST_ROOT}/dyninstAPI_RT/src
+    ${DYNINST_ROOT}/dyninstAPI_RT/h
+    ${DYNINST_ROOT}
   )
 
 set (SRC_LIST
@@ -162,7 +170,7 @@ ENDMACRO (CHECK_C_COMPILER_FLAG_EXTENDED)
 message (STATUS "Checking for 32-bit runtime library...")
 
 CHECK_C_COMPILER_FLAG_EXTENDED ("-m32" CHECK_RT_LIB_32)
-if (CHECK_RT_LIB_32)
+if (CHECK_RT_LIB_32 AND NOT ${PLATFORM} MATCHES bgq)
 message (STATUS "Enabling 32-bit runtime library; change BUILD_RTLIB_32 to OFF to disable")
 SET (BUILD_RTLIB_32 ON CACHE STRING "Build 32-bit version of RT library")
 ELSE ()
@@ -178,7 +186,7 @@ add_library (dyninstAPI_RT_m32_static STATIC ${SRC_LIST_mabi})
 
 set_target_properties (dyninstAPI_RT_m32 dyninstAPI_RT_m32_static
                       PROPERTIES
-                      COMPILE_FLAGS "-m32"
+                      COMPILE_FLAGS "-DMUTATEE_32 -m32"
                       LINK_FLAGS "-m32"
                       SOVERSION ${SOVERSION}
                       VERSION ${LIBVERSION})
@@ -186,7 +194,7 @@ set_target_properties (dyninstAPI_RT_m32 dyninstAPI_RT_m32_static
 set_target_properties (dyninstAPI_RT_m32_static
                       PROPERTIES
                       OUTPUT_NAME dyninstAPI_RT_m32
-                      COMPILE_FLAGS "-m32"
+                      COMPILE_FLAGS "-DMUTATEE_32 -m32"
                       LINK_FLAGS "-m32"
 		      COMPILE_DEFINITIONS DYNINST_RT_STATIC_LIB)
 #                      SOVERSION ${SOVERSION}

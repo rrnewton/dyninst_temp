@@ -176,10 +176,10 @@ unsigned long long PDYN_mulMillion(unsigned long long in) {
 
 #if defined(cap_gnu_demangler)
 #include <cxxabi.h>
-using namespace __cxxabiv1;
+using namespace abi;
 #endif
 
-char * COMMON_EXPORT P_cplus_demangle( const char * symbol, bool nativeCompiler,
+char * P_cplus_demangle( const char * symbol, bool nativeCompiler,
 				bool includeTypes ) 
 {
    int opts = 0;
@@ -1069,7 +1069,7 @@ bool findProcLWPs(pid_t pid, std::vector<pid_t> &lwps)
          continue;
       }
       unsigned lwp_id = atoi(direntry->d_name+1);
-      int lwp_ppid;
+      int lwp_ppid = 0;
       if (!lwp_id) 
          continue;
       sprintf(name, "/proc/%d/status", lwp_id);

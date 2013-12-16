@@ -616,6 +616,7 @@ bool int_process::forked()
 
    int_thread *initial_thread;
    initial_thread = int_thread::createThread(this, NULL_THR_ID, NULL_LWP, true, int_thread::as_created_attached);
+   (void)initial_thread; // suppress unused warning
 
    ProcPool()->addProcess(this);
 
@@ -1287,6 +1288,19 @@ int_multiToolControl *int_process::getMultiToolControl()
    return pMultiToolControl;
 }
 
+int_memUsage *int_process::getMemUsage()
+{
+   if (MemUsage_set)
+      return pMemUsage;
+   MemUsage_set = true;
+   pMemUsage = dynamic_cast<int_memUsage *>(this);
+   if (!pMemUsage)
+      return NULL;
+   if (!pMemUsage->up_ptr)
+      pMemUsage->up_ptr = new MemoryUsage(proc());
+   return pMemUsage;
+}
+
 int_signalMask *int_process::getSignalMask()
 {
    if (SignalMask_set)
@@ -1364,7 +1378,9 @@ int_process::int_process(Dyninst::PID p, std::string e,
    pMultiToolControl(NULL),
    pSignalMask(NULL),
    pCallStackUnwinding(NULL),
+   pMemUsage(NULL),
    pBGQData(NULL),
+   pRemoteIO(NULL),
    LibraryTracking_set(false),
    LWPTracking_set(false),
    ThreadTracking_set(false),
@@ -1372,6 +1388,7 @@ int_process::int_process(Dyninst::PID p, std::string e,
    MultiToolControl_set(false),
    SignalMask_set(false),
    CallStackUnwinding_set(false),
+   MemUsage_set(false),
    BGQData_set(false),
    remoteIO_set(false)
 {
@@ -1395,7 +1412,6 @@ int_process::int_process(Dyninst::PID pid_, int_process *p) :
    forcedTermination(false),
    silent_mode(false),
    exitCode(p->exitCode),
-   exec_mem_cache(exec_mem_cache),
    continueSig(p->continueSig),
    mem_cache(this),
    async_event_count(Counter::AsyncEvents),
@@ -1412,6 +1428,7 @@ int_process::int_process(Dyninst::PID pid_, int_process *p) :
    pMultiToolControl(NULL),
    pSignalMask(NULL),
    pCallStackUnwinding(NULL),
+   pMemUsage(NULL),
    pBGQData(NULL),
    pRemoteIO(NULL),
    LibraryTracking_set(false),
@@ -1421,6 +1438,7 @@ int_process::int_process(Dyninst::PID pid_, int_process *p) :
    MultiToolControl_set(false),
    SignalMask_set(false),
    CallStackUnwinding_set(false),
+   MemUsage_set(false),
    BGQData_set(false),
    remoteIO_set(false)
 {
@@ -1872,8 +1890,8 @@ bool int_process::findAllocatedRegionAround(Dyninst::Address addr,
 bool int_process::plat_findAllocatedRegionAround(Dyninst::Address addr,
                                                  Process::MemoryRegion& memRegion) {
     (void)addr;
-    memRegion.first  = NULL;
-    memRegion.second = NULL;
+    memRegion.first  = 0;
+    memRegion.second = 0;
     perr_printf("Called findAllocatedRegionAround on unspported platform\n");
     setLastError(err_unsupported,
                  "Find Allocated Region Addr not supported on this platform\n");
@@ -2834,6 +2852,7 @@ int_thread::int_thread(int_process *p, Dyninst::THR_ID t, Dyninst::LWP l) :
    generator_nonexited_thrd_count(Counter::GeneratorNonExitedThreads),
    neonatal_threads(Counter::NeonatalThreads),
    pending_stackwalk_count(Counter::PendingStackwalks),
+   postponed_syscall_state(this, PostponedSyscallStateID, dontcare),
    exiting_state(this, ExitingStateID, dontcare),
    startup_state(this, StartupStateID, dontcare),
    pending_stop_state(this, PendingStopStateID, dontcare),
@@ -3162,6 +3181,11 @@ void int_thread::triggerContinueCBs()
    }
 }
 
+int_thread::StateTracker &int_thread::getPostponedSyscallState()
+{
+   return postponed_syscall_state;
+}
+
 int_thread::StateTracker &int_thread::getBreakpointState()
 {
    return breakpoint_state;
@@ -3277,6 +3301,7 @@ int_thread::StateTracker &int_thread::getActiveState() {
 int_thread::StateTracker &int_thread::getStateByID(int id)
 {
    switch (id) {
+      case PostponedSyscallStateID: return postponed_syscall_state;
       case ExitingStateID: return exiting_state;
       case StartupStateID: return startup_state;
       case AsyncStateID: return async_state;
@@ -3303,6 +3328,7 @@ int_thread::StateTracker &int_thread::getStateByID(int id)
 std::string int_thread::stateIDToName(int id)
 {
    switch (id) {
+      case PostponedSyscallStateID: return "postponed syscall";
       case ExitingStateID: return "exiting";      
       case StartupStateID: return "startup";
       case AsyncStateID: return "async";
@@ -4594,7 +4620,7 @@ int_breakpoint::int_breakpoint(Breakpoint::ptr up) :
    up_bp(up),
    to(0x0),
    isCtrlTransfer_(false),
-   data(false),
+   data(NULL),
    hw(false),
    hw_perms(0),
    hw_size(0),
@@ -4610,7 +4636,7 @@ int_breakpoint::int_breakpoint(Dyninst::Address to_, Breakpoint::ptr up, bool of
    up_bp(up),
    to(to_),
    isCtrlTransfer_(true),
-   data(false),
+   data(NULL),
    hw(false),
    hw_perms(0),
    hw_size(0),
@@ -4626,14 +4652,15 @@ int_breakpoint::int_breakpoint(unsigned int hw_prems_, unsigned int hw_size_, Br
   up_bp(up),
   to(0x0),
   isCtrlTransfer_(false),
-  data(false),
+  data(NULL),
   hw(true),
   hw_perms(hw_prems_),
   hw_size(hw_size_),
   onetime_bp(false),
   onetime_bp_hit(false),
   procstopper(false),
-  suppress_callbacks(false)
+  suppress_callbacks(false),
+  offset_transfer(false)
 {
 }
 
@@ -5331,7 +5358,7 @@ int_library::int_library(std::string n, bool shared_lib,
    user_data(NULL),
    is_shared_lib(shared_lib)
 {
-   assert(n != "");
+//   assert(n != "");
    up_lib = Library::ptr(new Library());
    up_lib->lib = this;
 }
@@ -5702,17 +5729,17 @@ std::pair<Dyninst::MachRegister, Dyninst::MachRegisterVal> RegisterPool::iterato
    return *i;
 }
 
-RegisterPool::iterator RegisterPool::iterator::operator++()
-{
-   int_iter orig = i;
-   i++;
-   return RegisterPool::iterator(i);
-}
-
-RegisterPool::iterator RegisterPool::iterator::operator++(int)
+RegisterPool::iterator RegisterPool::iterator::operator++() // prefix
 {
    i++;
    return *this;
+}
+
+RegisterPool::iterator RegisterPool::iterator::operator++(int) // postfix
+{
+   RegisterPool::iterator orig = *this;
+   i++;
+   return orig;
 }
 
 RegisterPool::const_iterator::const_iterator()
@@ -5733,17 +5760,17 @@ std::pair<Dyninst::MachRegister, Dyninst::MachRegisterVal> RegisterPool::const_i
    return *i;
 }
 
-RegisterPool::const_iterator RegisterPool::const_iterator::operator++()
-{
-   int_iter orig = i;
-   i++;
-   return RegisterPool::const_iterator(i);
-}
-
-RegisterPool::const_iterator RegisterPool::const_iterator::operator++(int)
+RegisterPool::const_iterator RegisterPool::const_iterator::operator++() // prefix
 {
    i++;
    return *this;
+}
+
+RegisterPool::const_iterator RegisterPool::const_iterator::operator++(int) // postfix
+{
+   RegisterPool::const_iterator orig = *this;
+   i++;
+   return orig;
 }
 
 void regpoolClearOnCont(int_thread *thr)
@@ -5927,17 +5954,17 @@ Library::ptr LibraryPool::iterator::operator*() const
    return (*int_iter)->up_lib;
 }
 
-LibraryPool::iterator LibraryPool::iterator::operator++()
+LibraryPool::iterator LibraryPool::iterator::operator++() // prefix
+{
+   ++int_iter;
+   return *this;
+}
+
+LibraryPool::iterator LibraryPool::iterator::operator++(int) // postfix
 {
    LibraryPool::iterator orig = *this;
    ++int_iter;
    return orig;
-}
-
-LibraryPool::iterator LibraryPool::iterator::operator++(int)
-{
-   ++int_iter;
-   return *this;
 }
 
 LibraryPool::iterator LibraryPool::begin()
@@ -6001,17 +6028,17 @@ bool LibraryPool::const_iterator::operator!=(const LibraryPool::const_iterator &
    return int_iter != i.int_iter;
 }
 
-LibraryPool::const_iterator LibraryPool::const_iterator::operator++()
+LibraryPool::const_iterator LibraryPool::const_iterator::operator++() // prefix
+{
+   ++int_iter;
+   return *this;
+}
+
+LibraryPool::const_iterator LibraryPool::const_iterator::operator++(int) // postfix
 {
    LibraryPool::const_iterator orig = *this;
    ++int_iter;
    return orig;
-}
-
-LibraryPool::const_iterator LibraryPool::const_iterator::operator++(int)
-{
-   ++int_iter;
-   return *this;
 }
 
 bool Process::registerEventCallback(EventType evt, Process::cb_func_t cbfunc)
@@ -7037,6 +7064,15 @@ RemoteIO *Process::getRemoteIO()
    return proc->up_ptr;
 }
 
+MemoryUsage *Process::getMemoryUsage()
+{
+   MTLock lock_this_func;
+   PROC_EXIT_TEST("getMemoryUsage", NULL);
+   int_memUsage *proc = llproc_->getMemUsage();
+   if (!proc) return NULL;
+   return proc->up_ptr;
+}
+
 BGQData *Process::getBGQ()
 {
    MTLock lock_this_func;
@@ -7087,6 +7123,15 @@ const RemoteIO *Process::getRemoteIO() const
    MTLock lock_this_func;
    PROC_EXIT_TEST("getRemoteIO", NULL);
    int_remoteIO *proc = llproc_->getRemoteIO();
+   if (!proc) return NULL;
+   return proc->up_ptr;
+}
+
+const MemoryUsage *Process::getMemoryUsage() const
+{
+   MTLock lock_this_func;
+   PROC_EXIT_TEST("getMemoryUsage", NULL);
+   int_memUsage *proc = llproc_->getMemUsage();
    if (!proc) return NULL;
    return proc->up_ptr;
 }
@@ -7667,7 +7712,30 @@ Thread::ptr ThreadPool::iterator::operator*() const
    return curh;
 }
 
-ThreadPool::iterator ThreadPool::iterator::operator++()
+ThreadPool::iterator ThreadPool::iterator::operator++() // prefix
+{
+   MTLock lock_this_func;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return *this;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+	  if (!curh->isUser())
+		  continue;
+      return *this;
+   }
+}
+
+ThreadPool::iterator ThreadPool::iterator::operator++(int) // postfix
 {
    MTLock lock_this_func;
    ThreadPool::iterator orig = *this;
@@ -7685,32 +7753,9 @@ ThreadPool::iterator ThreadPool::iterator::operator++()
          continue;
       if (curh->llthrd()->getUserState().getState() == int_thread::exited)
          continue;
-	  if (!curh->isUser())
-		  continue;
-      return orig;
-   }
-}
-
-ThreadPool::iterator ThreadPool::iterator::operator++(int)
-{
-   MTLock lock_this_func;
-
-   assert(curi >= 0); //If this fails, you incremented a bad iterator
-   for (;;) {
-      curi++;
-      if (curi >= (signed int) curp->hl_threads.size()) {
-         curh = Thread::ptr();
-         curi = end_val;
-         return *this;
-      }
-      curh = curp->hl_threads[curi];
-      if (!curh->llthrd())
-         continue;
-      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
-         continue;
       if (!curh->isUser())
          continue;
-      return *this;
+      return orig;
    }
 }
 
@@ -7782,7 +7827,30 @@ Thread::const_ptr ThreadPool::const_iterator::operator*() const
    return curh;
 }
 
-ThreadPool::const_iterator ThreadPool::const_iterator::operator++()
+ThreadPool::const_iterator ThreadPool::const_iterator::operator++() // prefix
+{
+   MTLock lock_this_func;
+
+   assert(curi >= 0); //If this fails, you incremented a bad iterator
+   for (;;) {
+      curi++;
+      if (curi >= (signed int) curp->hl_threads.size()) {
+         curh = Thread::ptr();
+         curi = end_val;
+         return *this;
+      }
+      curh = curp->hl_threads[curi];
+      if (!curh->llthrd())
+         continue;
+      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
+         continue;
+	  if (!curh->isUser())
+		  continue;
+      return *this;
+   }
+}
+
+ThreadPool::const_iterator ThreadPool::const_iterator::operator++(int) // postfix
 {
    MTLock lock_this_func;
    ThreadPool::const_iterator orig = *this;
@@ -7803,29 +7871,6 @@ ThreadPool::const_iterator ThreadPool::const_iterator::operator++()
 	  if (!curh->isUser())
 		  continue;
       return orig;
-   }
-}
-
-ThreadPool::const_iterator ThreadPool::const_iterator::operator++(int)
-{
-   MTLock lock_this_func;
-
-   assert(curi >= 0); //If this fails, you incremented a bad iterator
-   for (;;) {
-      curi++;
-      if (curi >= (signed int) curp->hl_threads.size()) {
-         curh = Thread::ptr();
-         curi = end_val;
-         return *this;
-      }
-      curh = curp->hl_threads[curi];
-      if (!curh->llthrd())
-         continue;
-      if (curh->llthrd()->getUserState().getState() == int_thread::exited)
-         continue;
-	  if (!curh->isUser())
-		  continue;
-      return *this;
    }
 }
 

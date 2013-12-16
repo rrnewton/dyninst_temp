@@ -666,7 +666,6 @@ boost::tuple<Instruction::Ptr,
 
     bool foundMaxSwitch = false;
     bool foundCondBranch = false;
-    Address maxSwitchAddr = 0;
 
     WL.push_back(start);
     Instruction::Ptr compareInsn, condBranchInsn;
@@ -688,7 +687,7 @@ boost::tuple<Instruction::Ptr,
         InstructionDecoder dec(buf, curBlk->size(), currentBlock->_isrc->getArch());
         Instruction::Ptr i;
         Address curAdr = curBlk->start();
-        while(i = dec.decode())
+        while((i = dec.decode()))
         {
             if(i->getCategory() == c_CompareInsn)
             // check for cmp
@@ -696,7 +695,6 @@ boost::tuple<Instruction::Ptr,
                 parsing_printf("\tFound jmp table cmp instruction %s at 0x%lx\n",
                                i->format().c_str(), curAdr);
                 compareInsn = i;
-                maxSwitchAddr = curAdr;
                 foundMaxSwitch = true;
             }
             if(i->getCategory() == c_BranchInsn &&

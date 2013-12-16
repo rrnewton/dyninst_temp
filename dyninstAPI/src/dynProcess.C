@@ -191,7 +191,8 @@ PCProcess *PCProcess::setupForkedProcess(PCProcess *parent, Process::ptr pcProc)
         if( !ret->getDyninstRTLibName() ) {
             startup_printf("%s[%d]: failed to get Dyninst RT lib name\n",
                     FILE__, __LINE__);
-            return false;
+            delete ret;
+            return NULL;
         }
         startup_printf("%s[%d]: Got Dyninst RT libname: %s\n", FILE__, __LINE__,
                        ret->dyninstRT_name.c_str());
@@ -1161,6 +1162,15 @@ bool PCProcess::detachProcess(bool /*cont*/) {
     if( isTerminated() ) return true;
 
     if( !isAttached() ) return false;
+
+    if (tracedSyscalls_) {
+        tracedSyscalls_->removePreFork();
+        tracedSyscalls_->removePostFork();
+        tracedSyscalls_->removePreExec();
+        tracedSyscalls_->removePostExec();
+        tracedSyscalls_->removePreExit();
+        tracedSyscalls_->removePreLwpExit();
+    }
 
     // TODO figure out if ProcControl should care about continuing a process
     // after detach

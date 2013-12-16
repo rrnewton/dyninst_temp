@@ -47,7 +47,7 @@ namespace {
  * cases in this function are identical. We'll pay
  * extra in this (uncommon) case.
  */
-inline bool is_code(Function * f, Address addr)
+static inline bool is_code(Function * f, Address addr)
 {
     return f->region()->isCode(addr) ||
            f->isrc()->isCode(addr);
@@ -100,7 +100,14 @@ class ParseWorkElem
             case INDIRECT:
                 _order = br_indirect; break;
             case DIRECT:
-                _order = br_direct; break;
+                {
+                    if (tailcall) {
+                        _order = call;
+                    } else {
+                        _order = br_direct; 
+                    }
+                    break;
+                }
             case FALLTHROUGH:
                 _order = ret_fallthrough; break;
             case CATCH:

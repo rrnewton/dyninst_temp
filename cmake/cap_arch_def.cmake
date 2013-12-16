@@ -7,6 +7,10 @@ set (CAP_DEFINES
      -Dcap_threads
 )
 
+if (${USE_GNU_DEMANGLER} MATCHES 1)
+set (CAP_DEFINES ${CAP_DEFINES} -Dcap_gnu_demangler)
+endif()
+
 if (PLATFORM MATCHES i386)
 set (ARCH_DEFINES -Darch_x86)
 set (CAP_DEFINES ${CAP_DEFINES}
@@ -36,8 +40,8 @@ set (CAP_DEFINES ${CAP_DEFINES}
 
 elseif (PLATFORM MATCHES ppc64)
 set (ARCH_DEFINES -Darch_power -Darch_64bit)
-set (CMAKE_C_FLAGS ${CMAKE_C_FLAGS} -m64)
-set (CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} -m64)
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -m64")
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -m64")
 set (CAP_DEFINES ${CAP_DEFINES} 
              -Dcap_32_64
              -Dcap_registers

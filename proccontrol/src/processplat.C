@@ -324,6 +324,76 @@ MultiToolControl::priority_t MultiToolControl::getToolPriority() const
    return llproc->mtool_getPriority();
 }
 
+MemoryUsage::MemoryUsage(Process::ptr proc_) :
+   proc(proc_)
+{
+}
+
+MemoryUsage::~MemoryUsage()
+{
+   proc = Process::weak_ptr();
+}
+
+bool MemoryUsage::sharedUsed(unsigned long &used) const
+{
+   MTLock lock_this_func;
+   Process::ptr p = proc.lock();
+   PTR_EXIT_TEST(p, "sharedUsed", false);
+   int_memUsage *llproc = p->llproc()->getMemUsage();
+   unsigned long val;
+   
+   MemUsageResp_t mem_response(&val, llproc);
+   bool result = llproc->plat_getSharedUsage(&mem_response);
+   if (!result) {
+      perr_printf("Error getting shared usage\n");
+      return false;
+   }
+   
+   llproc->waitForEvent(&mem_response);
+   used = *mem_response.get();
+   return true;
+}
+
+bool MemoryUsage::heapUsed(unsigned long &used) const
+{
+   MTLock lock_this_func;
+   Process::ptr p = proc.lock();
+   PTR_EXIT_TEST(p, "heapUsed", false);
+   int_memUsage *llproc = p->llproc()->getMemUsage();
+   unsigned long val;
+   
+   MemUsageResp_t mem_response(&val, llproc);
+   bool result = llproc->plat_getHeapUsage(&mem_response);
+   if (!result) {
+      perr_printf("Error getting heap usage\n");
+      return false;
+   }
+   
+   llproc->waitForEvent(&mem_response);
+   used = *mem_response.get();
+   return true;
+}
+
+bool MemoryUsage::stackUsed(unsigned long &used) const
+{
+   MTLock lock_this_func;
+   Process::ptr p = proc.lock();
+   PTR_EXIT_TEST(p, "stackUsed", false);
+   int_memUsage *llproc = p->llproc()->getMemUsage();
+   unsigned long val;
+   
+   MemUsageResp_t mem_response(&val, llproc);
+   bool result = llproc->plat_getStackUsage(&mem_response);
+   if (!result) {
+      perr_printf("Error getting stack usage\n");
+      return false;
+   }
+   
+   llproc->waitForEvent(&mem_response);
+   used = *mem_response.get();
+   return true;
+}
+
 dyn_sigset_t SignalMask::default_sigset;
 bool SignalMask::sigset_initialized = false;
 
@@ -516,7 +586,7 @@ bool RemoteIO::addToFileSet(std::string filename, FileSet *fs) const
 {
    MTLock lock_this_func;
    Process::const_ptr p = proc.lock();
-   PTR_EXIT_TEST(p, "addToFileSet", NULL);
+   PTR_EXIT_TEST(p, "addToFileSet", false);
    fs->insert(make_pair(p, FileInfo(filename)));
    return true;
 }
@@ -894,6 +964,29 @@ int_callStackUnwinding::~int_callStackUnwinding()
 {
 }
 
+int_memUsage::int_memUsage(Dyninst::PID p, std::string e, std::vector<std::string> a,
+                           std::vector<std::string> envp, std::map<int,int> f) :
+   int_process(p, e, a, envp, f),
+   resp_process(p, e, a, envp, f),
+   up_ptr(NULL)
+{
+}
+
+int_memUsage::int_memUsage(Dyninst::PID pid_, int_process *p) :
+   int_process(pid_, p),
+   resp_process(pid_, p),
+   up_ptr(NULL)
+{
+}
+
+int_memUsage::~int_memUsage()
+{
+   if (up_ptr) {
+      delete up_ptr;
+      up_ptr = NULL;
+   }
+}
+
 int_BGQData::int_BGQData(Dyninst::PID p, string e, vector<string> a,
                          vector<string> envp, map<int,int> f) :
    int_process(p, e, a, envp, f)
@@ -1003,7 +1096,7 @@ bool int_remoteIO::getFileStatData(FileSet &files)
       delete *i;
    }
 
-   return true;      
+   return !had_error;
 }
 
 bool int_remoteIO::getFileDataAsync(const FileSet &files)
