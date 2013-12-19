@@ -263,7 +263,7 @@ class StackAnalysis {
     TransferFunc(Height a, Height d, MachRegister f, MachRegister t) : 
        from(f), target(t), delta(d), abs(a) {};
 
-       Height apply(const RegisterState &inputs, const RegisterState &blockInputs, bool inCycle) const;
+       Height apply(const RegisterState &inputs) const;
        void accumulate(std::map<MachRegister, TransferFunc> &inputs);
 
        std::string format() const;
@@ -287,7 +287,7 @@ class StackAnalysis {
 
        SummaryFunc() {};
 
-       void apply(const RegisterState &in, RegisterState &out, bool inCycle) const;
+       void apply(const RegisterState &in, RegisterState &out) const;
        std::string format() const;
 	   void validate() const;
 
@@ -340,14 +340,14 @@ class StackAnalysis {
 
     bool analyze();
     void summarizeBlocks();
-    void summarize(std::set<ParseAPI::Block*>&);
+    void summarize();
 
-    void fixpoint(std::set<ParseAPI::Block*>&);
+    void fixpoint();
     
     void createIntervals();
 
     void createEntryInput(RegisterState &input);
-    void meetInputs(ParseAPI::Block *b, RegisterState &input);
+    void meetInputs(ParseAPI::Block *b, RegisterState& blockInput, RegisterState &input);
     void meet(const RegisterState &source, RegisterState &accum);
     RegisterState getSrcOutputRegs(ParseAPI::Edge* e);
     void computeInsnEffects(ParseAPI::Block *block,
