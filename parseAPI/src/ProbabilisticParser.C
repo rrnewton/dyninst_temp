@@ -335,20 +335,13 @@ ProbabilityCalculator::ProbabilityCalculator(CodeRegion *reg, CodeSource *source
 }
 
 double ProbabilityCalculator::calcProbByMatchingIdioms(Address addr) {
-    if (!cr->contains(addr)) return -1;
-    if (addr !=0x41195e) return -1;
     double w = model.getBias();
     bool valid = true;
-    printf("weight before forward match %.10lf\n", w);
     w += calcForwardWeights(0, addr, model.getNormalIdiomTreeRoot(), valid);
-    printf("weight after forward match %.10lf\n", w);
     if (valid) {
 	set<IdiomPrefixTree*> matched;
 	w += calcBackwardWeights(0, addr, model.getPrefixIdiomTreeRoot(), matched);
-	printf("weight after backward match %.10lf\n", w);
         double prob = ((double)1) / (1 + exp(-w));
-	printf("prob %.10lf\n", prob);
-	exit(0);
         return FEPProb[addr] = reachingProb[addr] = prob;	
     } else return FEPProb[addr] = reachingProb[addr] = 0;
 }
@@ -465,7 +458,6 @@ double ProbabilityCalculator::calcBackwardWeights(int cur, Address addr, IdiomPr
     double w = 0;
     if (tree->isFeature()) {
         if (matched.find(tree) == matched.end()) {
-	    printf("Backward match at %lx for weight %.10lf\n", addr, tree->getWeight());
 	    matched.insert(tree);
 	    w += tree->getWeight();
 	}
