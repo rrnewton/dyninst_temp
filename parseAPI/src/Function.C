@@ -504,7 +504,7 @@ Function::tampersStack(bool recalculate)
         _tamper = TAMPER_NONE;
         return _tamper;
     }
-	_cache_valid = false;
+	//_cache_valid = false; [ACHIN - changing cache - 10/21/2014]
 
     // if we want to re-calculate the tamper address
     if (!recalculate && TAMPER_UNSET != _tamper) {
