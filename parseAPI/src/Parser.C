@@ -634,6 +634,7 @@ Parser::finalize(Function *f)
     }
 
 	bool cache_value = true;
+	/* Made Change to fix the cache_valid= false assert error - ACHIN - 10/30/2014
 	if(frame_status(f->region(), f->addr()) < ParseFrame::PARSED) {
 		// XXX prevent caching of blocks, extents for functions that
 		// are actively being parsed. This prevents callbacks and other
@@ -641,7 +642,7 @@ Parser::finalize(Function *f)
 		// the caching flag and preventing later updates to the blocks()
 		// vector during finalization.
 		cache_value = false;
-	}
+	}*/
 
     parsing_printf("[%s] finalizing %s (%lx)\n",
         FILE__,f->name().c_str(),f->addr());

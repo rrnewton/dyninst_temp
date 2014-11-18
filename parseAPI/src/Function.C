@@ -496,7 +496,8 @@ Function::tampersStack(bool recalculate)
         _tamper = TAMPER_NONE;
         return _tamper;
     }
-
+	
+	bool i = _cache_valid;
     // this is above the cond'n below b/c it finalizes the function, 
     // which could in turn call this function
     Function::const_blocklist retblks(returnBlocks());
@@ -510,12 +511,13 @@ Function::tampersStack(bool recalculate)
     if (!recalculate && TAMPER_UNSET != _tamper) {
         return _tamper;
     }
-
+	assert(_cache_valid);
     AssignmentConverter converter(true);
     vector<Assignment::Ptr> assgns;
     ST_Predicates preds;
     _tamper = TAMPER_UNSET;
     for (auto bit = retblks.begin(); retblks.end() != bit; ++bit) {
+		assert(_cache_valid);
         Address retnAddr = (*bit)->lastInsnAddr();
         InstructionDecoder retdec(this->isrc()->getPtrToInstruction(retnAddr), 
                                   InstructionDecoder::maxInstructionLength, 
