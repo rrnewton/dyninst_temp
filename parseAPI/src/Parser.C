@@ -1329,6 +1329,9 @@ Parser::parse_frame(ParseFrame & frame, bool recursive) {
                     _pcb.abruptEnd_cf(cur->lastInsnAddr(),cur,&det);
                     _pcb.foundWeirdInsns(func);
                     end_block(cur,ah);
+					/*Achin added code to allow invalid instructions to end up as a sink node 12/15/2014*/
+					link(cur, _sink, DIRECT, true);
+					/*Achin added code ends*/
                     break;
                 } else if (ah.isNopJump()) {
                     // patch the jump to make it a nop, and re-set the 

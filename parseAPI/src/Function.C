@@ -553,7 +553,8 @@ Function::tampersStack(bool recalculate)
                     stringstream graphDump;
                     graphDump << "sliceDump_" << this->name() << "_" 
                               << hex << retnAddr << dec << ".dot";
-                    //slGraph->printDOT(graphDump.str());
+					//[ACHIN] - UNCOMMENTED TO PRINT GRAPH STRUCTURE 11/24/2014
+                    slGraph->printDOT(graphDump.str());
                 }
                 DataflowAPI::Result_t slRes;
                 DataflowAPI::SymEval::expand(slGraph,slRes);

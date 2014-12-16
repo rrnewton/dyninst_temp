@@ -29,7 +29,7 @@
  */
 
 #include "DynAST.h"
-
+#include "../../dyninstAPI/src/debug.h"
 #include "../../common/src/singleton_object_pool.h"
 
 using namespace Dyninst; 
@@ -61,8 +61,10 @@ if(!in)
 	return;
   std::map<AST::Ptr, int>::iterator ssit = visited.find(in);
   if(ssit != visited.end() && (*ssit).second == BEING_VISITED) {
-	printf("Cycle Detected %p \n", (*ssit));
-	assert(0);
+	//printf("Cycle Detected %p \n", (*ssit));
+	  fprintf(stderr,"\nCycle detected haha\n");
+	// printf("Cycle detected <- %s\n",((*ssit).first)->format());
+	//assert(0);
   }
   if (ssit != visited.end() && (*ssit).second == DONE_VISITED) return;
    
@@ -72,7 +74,8 @@ if(!in)
 	   for (unsigned i = 0; i < in->numChildren(); ++i) {
 		hasCycle(in->child(i),visited);
 		if(in->child(i)){
-		printf(" <- %p", in->child(i));
+		//printf(" <- %p", in->child(i));
+		 // printf(" <- %s\n", in->child(i)->getID());
 	  }
 	
 	}

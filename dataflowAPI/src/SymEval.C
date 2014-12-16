@@ -543,7 +543,7 @@ SymEval::Retval_t SymEval::process(SliceNode::Ptr ptr,
 		//[ACHIN-CYCLE DETECTION CODE 11/17/2014]
 	std::map<AST::Ptr, int> visited1;
 
-	AST::hasCycle(ast, visited1);
+	//AST::hasCycle(ast, visited1);
 
 	//[ACHIN - code Ends 11/17/2014]
 		  expand_cerr << "Before substitution: " << (ast ? ast->format() : "<NULL AST>") << endl;
@@ -561,7 +561,7 @@ SymEval::Retval_t SymEval::process(SliceNode::Ptr ptr,
     //[ACHIN-CYCLE DETECTION CODE 11/17/2014]
 	std::map<AST::Ptr, int> visited;
 	
-	AST::hasCycle(ast, visited);
+	//AST::hasCycle(ast, visited);
 
 	//[ACHIN - code Ends 11/17/2014]
     // And attempt simplification again
