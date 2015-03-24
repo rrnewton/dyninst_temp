@@ -396,6 +396,42 @@ class Slicer {
     
     };
 
+    /*
+     * A cache from AbsRegions -> Defs.
+     *
+     * Each node that has been visited in the search
+     * has a DefCache that reflects the resolution of
+     * any AbsRegions down-slice. If the node is visited
+     * again through a different search path (if the graph
+     * has fork-join structure), this caching prevents
+     * expensive recursion
+     */
+    class DefCache {
+      public:
+        DefCache() { }
+        ~DefCache() { }
+
+        // add the values from another defcache
+        void merge(DefCache const& o);
+   
+        // replace mappings in this cache with those
+        // from another 
+        void replace(DefCache const& o);
+
+        std::set<Def> & get(AbsRegion const& r) { 
+            return defmap[r];
+        }
+        bool defines(AbsRegion const& r) const {
+            return defmap.find(r) != defmap.end();
+        }
+
+        void print() const;
+
+      private:
+        std::map< AbsRegion, std::set<Def> > defmap;
+    
+    };
+
     // For preventing insertion of duplicate edges
     // into the slice graph
     struct EdgeTuple {
@@ -653,10 +689,6 @@ class Slicer {
 
   // cache to prevent edge duplication
   std::map<EdgeTuple, int> unique_edges_;
-
-  // map of previous active maps. these are used to end recursion.
-  typedef std::map<AbsRegion, std::set<Element> > PrevMap;
-  std::map<Address, PrevMap> prev_maps;
 
   // set of plausible entry/exit nodes.
   std::set<SliceNode::Ptr> plausibleNodes;

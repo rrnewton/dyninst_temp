@@ -152,7 +152,7 @@ Slicer::sliceInternal(
     SliceNode::Ptr aP;
     SliceFrame initFrame;
     map<CacheEdge, set<AbsRegion> > visited;
-
+    
     // this is the unified cache aka the cache that will hold 
     // the merged set of 'defs'.
     map<Address,DefCache> cache;
@@ -540,6 +540,12 @@ Slicer::findMatch(
             // Link the assignments associated with this
             // abstract region (may be > 1)
             Element ne(cand.loc.block,cand.loc.func,reg,assn); 
+
+            // Cache
+            cache.get(reg).insert( Def(ne,reg) );
+            slicing_printf("\t\t\t cached [%s] -> <%s,%s>\n",
+               reg.format().c_str(),
+                ne.ptr->format().c_str(),reg.format().c_str());
 
             // Cache
             cache.get(reg).insert( Def(ne,reg) );
@@ -1765,6 +1771,30 @@ void Slicer::constructInitialFrame(
             Element ie(b_,f_,*iit,a_);
             initFrame.active[*iit].push_back(ie);
         }
+    }
+}
+
+void
+Slicer::DefCache::merge(Slicer::DefCache const& o)
+{
+    map<AbsRegion, set<Def> >::const_iterator oit = o.defmap.begin();
+    for( ; oit != o.defmap.end(); ++oit) {
+        AbsRegion const& r = oit->first;
+        set<Def> const& s = oit->second;
+        defmap[r].insert(s.begin(),s.end());
+    }
+}
+
+void
+Slicer::DefCache::replace(Slicer::DefCache const& o)
+{   
+    // XXX if o.defmap[region] is empty set, remove that entry
+    map<AbsRegion, set<Def> >::const_iterator oit = o.defmap.begin();
+    for( ; oit != o.defmap.end(); ++oit) {
+        if(!(*oit).second.empty())
+            defmap[(*oit).first] = (*oit).second;
+        else
+            defmap.erase((*oit).first);
     }
 }
 
