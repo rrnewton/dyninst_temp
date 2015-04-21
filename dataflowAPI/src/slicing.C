@@ -1798,29 +1798,6 @@ Slicer::DefCache::replace(Slicer::DefCache const& o)
     }
 }
 
-void
-Slicer::DefCache::merge(Slicer::DefCache const& o)
-{
-    map<AbsRegion, set<Def> >::const_iterator oit = o.defmap.begin();
-    for( ; oit != o.defmap.end(); ++oit) {
-        AbsRegion const& r = oit->first;
-        set<Def> const& s = oit->second;
-        defmap[r].insert(s.begin(),s.end());
-    }
-}
-
-void
-Slicer::DefCache::replace(Slicer::DefCache const& o)
-{   
-    // XXX if o.defmap[region] is empty set, remove that entry
-    map<AbsRegion, set<Def> >::const_iterator oit = o.defmap.begin();
-    for( ; oit != o.defmap.end(); ++oit) {
-        if(!(*oit).second.empty())
-            defmap[(*oit).first] = (*oit).second;
-        else
-            defmap.erase((*oit).first);
-    }
-}
 
 void
 Slicer::DefCache::print() const {
