@@ -992,7 +992,7 @@ bool Symtab::addSymbolToAggregates(const Symbol *sym_tmp)
 // Also, exclude symbols that begin with _imp_ in defensive mode.
 // These symbols are entries in the IAT and shouldn't be treated
 // as functions.
-bool Symtab::doNotAggregate(Symbol *&sym) {
+bool Symtab::doNotAggregate(Symbol* sym) {
     const std::string& mangled = sym->getMangledName();
 
     if (isDefensiveBinary() && mangled.compare(0, 5, "_imp_", 5) == 0) {
