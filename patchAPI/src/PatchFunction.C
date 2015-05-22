@@ -652,10 +652,6 @@ bool PatchFunction::consistency() const {
            llit != func_->callEdges().end(); ++llit) 
       {
           llcbs.insert((*llit)->src());
-          // normal calls plus tail-calls (direct and indirect).
-          assert((*llit)->type() == ParseAPI::CALL
-              || (*llit)->type() == ParseAPI::DIRECT
-              || (*llit)->type() == ParseAPI::INDIRECT);
       }
       if (call_blocks_.size() != llcbs.size()) {
          cerr << "PatchAPI call_blocks_ not same size ("<<call_blocks_.size()
