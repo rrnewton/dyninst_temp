@@ -1,5 +1,9 @@
 
-FROM ubuntu:14.04
+# The LTS works:
+# FROM ubuntu:14.04
+
+# But let's go one step newer for GCC 4.9:
+FROM ubuntu:14.10
 
 RUN apt-get update && apt-get install -y --force-yes \
      cmake \
